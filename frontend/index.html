@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>cc2llm — Admin</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<header>
+		<h1>cc2llm</h1>
+		<span class="subtitle">Multi-Provider LLM Bridge Admin</span>
+		<nav id="tabs">
+			<button class="tab active" data-tab="dashboard">Dashboard</button>
+			<button class="tab" data-tab="providers">Providers</button>
+			<button class="tab" data-tab="mappings">Model Mappings</button>
+			<button class="tab" data-tab="config">Raw Config</button>
+		</nav>
+	</header>
+
+	<main>
+		<section id="tab-dashboard" class="tab-content active">
+			<div class="card-grid">
+				<div class="card">
+					<h3>Status</h3>
+					<div id="status-indicator" class="status-badge">Checking...</div>
+				</div>
+				<div class="card">
+					<h3>Uptime</h3>
+					<div id="uptime" class="big-number">--</div>
+				</div>
+				<div class="card">
+					<h3>Memory</h3>
+					<div id="memory" class="big-number">-- MB</div>
+				</div>
+				<div class="card">
+					<h3>Active Providers</h3>
+					<div id="provider-count" class="big-number">--</div>
+				</div>
+				<div class="card">
+					<h3>Model Mappings</h3>
+					<div id="mapping-count" class="big-number">--</div>
+				</div>
+			</div>
+			<div class="card">
+				<h3>Provider Overview</h3>
+				<table>
+					<thead>
+						<tr><th>Provider</th><th>Type</th><th>Base URL</th><th>API Key</th></tr>
+					</thead>
+					<tbody id="provider-overview"></tbody>
+				</table>
+			</div>
+			<div class="card">
+				<h3>Mapping Overview</h3>
+				<table>
+					<thead>
+						<tr><th>Claude Prefix</th><th>Target Model</th><th>Provider</th></tr>
+					</thead>
+					<tbody id="mapping-overview"></tbody>
+				</table>
+			</div>
+		</section>
+
+		<section id="tab-providers" class="tab-content">
+			<div class="toolbar">
+				<button id="add-provider-btn" class="btn-primary">+ Add Provider</button>
+			</div>
+			<table>
+				<thead>
+					<tr><th>Name</th><th>Type</th><th>Base URL</th><th>API Key</th><th>Actions</th></tr>
+				</thead>
+				<tbody id="providers-table"></tbody>
+			</table>
+		</section>
+
+		<section id="tab-mappings" class="tab-content">
+			<div class="toolbar">
+				<button id="add-mapping-btn" class="btn-primary">+ Add Mapping</button>
+			</div>
+			<table>
+				<thead>
+					<tr><th>#</th><th>Claude Prefix</th><th>Target Model</th><th>Provider</th><th>Actions</th></tr>
+				</thead>
+				<tbody id="mappings-table"></tbody>
+			</table>
+		</section>
+
+		<section id="tab-config" class="tab-content">
+			<div class="toolbar">
+				<button id="save-config-btn" class="btn-primary">Save Config</button>
+				<span id="config-save-status"></span>
+			</div>
+			<textarea id="config-editor" spellcheck="false"></textarea>
+		</section>
+	</main>
+
+	<div id="modal" class="modal hidden">
+		<div class="modal-content">
+			<h2 id="modal-title"></h2>
+			<div id="modal-body"></div>
+			<div class="modal-actions">
+				<button id="modal-cancel" class="btn-secondary">Cancel</button>
+				<button id="modal-save" class="btn-primary">Save</button>
+			</div>
+		</div>
+	</div>
+
+	<script src="app.js"></script>
+</body>
+</html>

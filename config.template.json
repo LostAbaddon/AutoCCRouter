@@ -1,0 +1,52 @@
+{
+	"server": {
+		"port": 8765,
+		"host": "127.0.0.1",
+		"adminPort": 8766
+	},
+	"providers": {
+		"deepseek": {
+			"type": "anthropic",
+			"apiKey": "your-api-key-here",
+			"baseUrl": "https://api.deepseek.com/anthropic",
+			"proxy": ""
+		},
+		"openai": {
+			"type": "openai",
+			"apiKey": "your-api-key-here",
+			"baseUrl": "https://api.openai.com/v1",
+			"proxy": ""
+		},
+		"gemini": {
+			"type": "gemini",
+			"apiKey": "your-api-key-here",
+			"baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+			"proxy": ""
+		},
+		"kimi": {
+			"type": "openai",
+			"apiKey": "your-api-key-here",
+			"baseUrl": "https://api.moonshot.cn/v1",
+			"proxy": ""
+		},
+		"minimax": {
+			"type": "openai",
+			"apiKey": "your-api-key-here",
+			"baseUrl": "https://api.minimax.chat/v1",
+			"proxy": ""
+		},
+		"openrouter": {
+			"type": "openai",
+			"apiKey": "your-api-key-here",
+			"baseUrl": "https://openrouter.ai/api/v1",
+			"proxy": ""
+		}
+	},
+	"modelMapping": [
+		{ "prefix": "claude-opus", "target": "deepseek-v4-pro", "provider": "deepseek" },
+		{ "prefix": "claude-sonnet", "target": "deepseek-v4-pro", "provider": "deepseek" },
+		{ "prefix": "claude-haiku", "target": "deepseek-v4-flash", "provider": "deepseek" },
+			{ "prefix": "", "target": "", "provider": "deepseek" }
+	],
+	"logLevel": "info"
+}
