@@ -1,0 +1,59 @@
+{
+	"google": [
+		"embedding",
+		"\\bimagen\\b",
+		"\\bveo\\b",
+		"\\btts\\b",
+		"\\baqa\\b",
+		"\\blyria\\b",
+		"nano-banana",
+		"robotics",
+		"antigravity",
+		"native-audio",
+		"computer-use",
+		"-image\\b"
+	],
+	"openrouter": [
+		"embedding",
+		"-image\\b",
+		"\\bveo\\b",
+		"\\btts\\b",
+		"\\bwhisper\\b",
+		"dall-e",
+		"moderation",
+		"\\bspeech\\b",
+		"-audio\\b",
+		":free$",
+		"^~"
+	],
+	"openai": [
+		"embedding",
+		"\\btts\\b",
+		"\\bwhisper\\b",
+		"dall-e",
+		"moderation",
+		"\\bomni\\b",
+		"-audio\\b",
+		"babbage",
+		"davinci",
+		"safeguard"
+	],
+	"xai": [
+		"imagine",
+		"\\btts\\b",
+		"\\bstt\\b",
+		"\\bvoice\\b"
+	],
+	"deepseek": [
+		"\\bjanus\\b"
+	],
+	"moonshot": [
+		"kimi-audio",
+		"\\baudio\\b"
+	],
+	"minimax": [
+		"\\bspeech\\b",
+		"image-01",
+		"hailuo"
+	]
+}

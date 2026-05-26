@@ -1,7 +1,7 @@
 # CC2LLM
 
 > - AUTHOR: [LostAbaddon](lostabaddon@gmail.com)
-> - VERSION: 1.1.0
+> - VERSION: 1.1.1
 
 将 Claude Cowork / Claude Code 请求透明转发到多厂商 LLM 的桥接代理，支持自动话题分类、智能路由和 Web 管理面板。
 

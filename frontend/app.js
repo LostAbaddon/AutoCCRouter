@@ -58,7 +58,7 @@ const tabs = () => {
 	});
 };
 
-const loadDashboard = async () => {
+const loadDashboard = async (full = true) => {
 	try {
 		const status = await api.get('/api/status');
 		const indicator = document.getElementById('status-indicator');
@@ -75,6 +75,10 @@ const loadDashboard = async () => {
 		document.getElementById('memory').textContent = `${status.memory ? status.memory.rss : '--'} MB`;
 		document.getElementById('provider-count').textContent = (status.providers || []).length;
 		document.getElementById('mapping-count').textContent = status.mappings || 0;
+
+		if (!full) {
+			return;
+		}
 
 		const providers = await api.get('/api/providers');
 		const provOverview = document.getElementById('provider-overview');
@@ -154,6 +158,47 @@ const esc = (str) => {
 	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 };
 
+// 从 sessionStorage 获取 modelList，如果没有则从后台获取
+// 从 sessionStorage 获取 modelList，如果没有或过期（1天）则从后台获取
+const getModelList = async () => {
+	const TTL = 86400000;
+	let modelList = null;
+	try {
+		const cached = sessionStorage.getItem("modelList");
+		if (cached) {
+			const parsed = JSON.parse(cached);
+			if (parsed.data && parsed.ts && (Date.now() - parsed.ts < TTL)) {
+				modelList = parsed.data;
+			}
+		}
+	}
+	catch (e) {
+		// ignore
+	}
+	if (!modelList) {
+		try {
+			modelList = await api.get("/api/models");
+			sessionStorage.setItem("modelList", JSON.stringify({ data: modelList, ts: Date.now() }));
+		}
+		catch (e) {
+			console.error("Failed to fetch model list:", e);
+			modelList = {};
+		}
+	}
+	return modelList;
+};
+
+// 根据选中的 provider 生成 Target Model 下拉选项
+const buildModelOptions = (modelList, selectedProvider, selectedModel) => {
+	if (!selectedProvider || !modelList[selectedProvider]) {
+		return '<option value="">-- Select a model --</option>';
+	}
+	const models = modelList[selectedProvider] || [];
+	return models.map((m) =>
+		`<option value="${esc(m)}" ${m === selectedModel ? 'selected' : ''}>${esc(m)}</option>`
+	).join('');
+};
+
 const showModal = (title, bodyHtml, onSave) => {
 	const modal = document.getElementById('modal');
 	document.getElementById('modal-title').textContent = title;
@@ -210,20 +255,20 @@ const providerFormHtml = (provider) => {
 	`;
 };
 
-const mappingFormHtml = (mapping, providers) => {
+const mappingFormHtml = (mapping, providers, modelList) => {
 	const m = mapping || {};
 	const providerOptions = providers.map((prov) =>
 		`<option value="${esc(prov)}" ${m.provider === prov ? 'selected' : ''}>${esc(prov)}</option>`
 	).join('');
 
+	const currentProvider = m.provider || '';
+	const currentModel = m.target || '';
+	const modelOptions = buildModelOptions(modelList || {}, currentProvider, currentModel);
+
 	return `
 		<div class="form-group">
 			<label>Claude Model Prefix</label>
 			<input id="form-prefix" value="${esc(m.prefix || '')}" placeholder="e.g. claude-opus">
-		</div>
-		<div class="form-group">
-			<label>Target Model</label>
-			<input id="form-target" value="${esc(m.target || '')}" placeholder="e.g. deepseek-v4-pro">
 		</div>
 		<div class="form-group">
 			<label>Provider</label>
@@ -232,14 +277,51 @@ const mappingFormHtml = (mapping, providers) => {
 				${providerOptions}
 			</select>
 		</div>
+		<div class="form-group">
+			<label>Target Model</label>
+			<select id="form-target">
+				${modelOptions}
+			</select>
+		</div>
 	`;
+};
+
+// 为 mapping/agent 表单中的 provider 下拉框绑定 change 事件
+const bindProviderChange = (modelList) => {
+	const providerSelect = document.getElementById('form-provider');
+	const targetSelect = document.getElementById('form-target');
+	if (!providerSelect || !targetSelect) {
+		return;
+	}
+	providerSelect.addEventListener('change', () => {
+		const selectedProvider = providerSelect.value;
+		targetSelect.innerHTML = buildModelOptions(modelList, selectedProvider, '');
+	});
 };
 
 // -------------------- Agent (Working Mode) forms and handlers --------------------
 
 let currentAgentConfigSet = 'defaults';
 
-const agentModeFormHtml = (mode, spec) => {
+const agentModeFormHtml = (mode, spec, modelList, providers) => {
+	// spec 是 "provider/model" 字符串或数组 ["provider/model", ...]
+	const firstSpec = Array.isArray(spec) ? spec[0] : (spec || '');
+	let currentProvider = '';
+	let currentModel = '';
+	if (firstSpec && typeof firstSpec === 'string') {
+		const idx = firstSpec.indexOf('/');
+		if (idx > 0) {
+			currentProvider = firstSpec.substring(0, idx);
+			currentModel = firstSpec.substring(idx + 1);
+		}
+	}
+
+	const providerOptions = providers.map((prov) =>
+		`<option value="${esc(prov)}" ${currentProvider === prov ? 'selected' : ''}>${esc(prov)}</option>`
+	).join('');
+
+	const modelOptions = buildModelOptions(modelList || {}, currentProvider, currentModel);
+
 	return `
 		<div class="form-group">
 			<label>Mode Name</label>
@@ -247,9 +329,17 @@ const agentModeFormHtml = (mode, spec) => {
 			<span style="font-size:11px;color:#8b949e">Special modes: "default" (fallback), "quick" (classifier model)</span>
 		</div>
 		<div class="form-group">
-			<label>Provider / Model Spec</label>
-			<input id="form-agent-spec" value="${esc(Array.isArray(spec) ? spec.join(', ') : (spec || ''))}" placeholder="e.g. deepseek/deepseek-v4-pro, google/gemini-3.1-pro-preview">
-			<span style="font-size:11px;color:#8b949e">Comma-separate multiple specs for random selection</span>
+			<label>Provider</label>
+			<select id="form-provider">
+				<option value="">Select a provider...</option>
+				${providerOptions}
+			</select>
+		</div>
+		<div class="form-group">
+			<label>Target Model</label>
+			<select id="form-target">
+				${modelOptions}
+			</select>
 		</div>
 	`;
 };
@@ -345,25 +435,30 @@ const bindAgentActions = () => {
 		};
 	}
 
-	// Edit mode
 	document.querySelectorAll('[data-action="edit-agent-mode"]').forEach((btn) => {
 		btn.addEventListener('click', async () => {
 			const mode = btn.dataset.mode;
-			const config = await api.get('/api/config');
+			const [config, modelList] = await Promise.all([
+				api.get('/api/config'),
+				getModelList(),
+			]);
 			const allAgents = config.agents || {};
 			const agentSet = allAgents[currentAgentConfigSet] || {};
 			const spec = agentSet[mode] || '';
 
-			showModal(`Edit Mode: ${mode}`, agentModeFormHtml(mode, spec), async () => {
-				const specValue = document.getElementById('form-agent-spec').value.trim();
-				if (!specValue) {
-					alert('Spec is required');
+			showModal(`Edit Mode: ${mode}`, agentModeFormHtml(mode, spec, modelList, Object.keys(config.providers || {})), async () => {
+				const provider = document.getElementById('form-provider').value;
+				const model = document.getElementById('form-target').value;
+				if (!provider || !model) {
+					alert('Provider and model are required');
 					return;
 				}
-				const parts = specValue.split(',').map((s) => s.trim()).filter(Boolean);
-				agentSet[mode] = parts.length > 1 ? parts : parts[0];
+				const specValue = provider + '/' + model;
+				agentSet[mode] = specValue;
 				await api.put('/api/config', { agents: allAgents });
 			});
+
+			bindProviderChange(modelList);
 		});
 	});
 
@@ -481,24 +576,27 @@ const bindTableActions = () => {
 	document.querySelectorAll('[data-action="edit-mapping"]').forEach((btn) => {
 		btn.addEventListener('click', async () => {
 			const index = parseInt(btn.dataset.index, 10);
-			const [mappings, config] = await Promise.all([
+			const [mappings, config, modelList] = await Promise.all([
 				api.get('/api/mappings'),
 				api.get('/api/config'),
+				getModelList(),
 			]);
 			const mapping = mappings[index];
 			if (!mapping) {
 				return;
 			}
 
-			showModal('Edit Mapping', mappingFormHtml(mapping, Object.keys(config.providers || {})), async () => {
+			showModal('Edit Mapping', mappingFormHtml(mapping, Object.keys(config.providers || {}), modelList), async () => {
 				const updatedMapping = {
 					prefix: document.getElementById('form-prefix').value.trim(),
-					target: document.getElementById('form-target').value.trim(),
+					target: document.getElementById('form-target').value,
 					provider: document.getElementById('form-provider').value,
 				};
 				await api.del(`/api/mappings/${index}`);
 				await api.post('/api/mappings', updatedMapping);
 			});
+
+			bindProviderChange(modelList);
 		});
 	});
 
@@ -800,10 +898,13 @@ const init = () => {
 	});
 
 	document.getElementById('add-mapping-btn').addEventListener('click', async () => {
-		const config = await api.get('/api/config');
-		showModal('Add Mapping', mappingFormHtml(null, Object.keys(config.providers || {})), async () => {
+		const [config, modelList] = await Promise.all([
+			api.get('/api/config'),
+			getModelList(),
+		]);
+		showModal('Add Mapping', mappingFormHtml(null, Object.keys(config.providers || {}), modelList), async () => {
 			const prefix = document.getElementById('form-prefix').value.trim();
-			const target = document.getElementById('form-target').value.trim();
+			const target = document.getElementById('form-target').value;
 			const provider = document.getElementById('form-provider').value;
 			if (!prefix || !target || !provider) {
 				alert('All fields are required');
@@ -811,25 +912,32 @@ const init = () => {
 			}
 			await api.post('/api/mappings', { prefix, target, provider });
 		});
+
+		bindProviderChange(modelList);
 	});
 
 	// Add mode to current config set
 	document.getElementById('add-agent-btn').addEventListener('click', async () => {
-		const config = await api.get('/api/config');
-		showModal('Add Mode', agentModeFormHtml('', ''), async () => {
+		const [config, modelList] = await Promise.all([
+			api.get('/api/config'),
+			getModelList(),
+		]);
+		showModal('Add Mode', agentModeFormHtml('', '', modelList, Object.keys(config.providers || {})), async () => {
 			const mode = document.getElementById('form-mode').value.trim();
-			const specValue = document.getElementById('form-agent-spec').value.trim();
-			if (!mode || !specValue) {
-				alert('Mode name and spec are required');
+			const provider = document.getElementById('form-provider').value;
+			const model = document.getElementById('form-target').value;
+			if (!mode || !provider || !model) {
+				alert('Mode name, provider, and model are required');
 				return;
 			}
 			const allAgents = config.agents || {};
 			const agentSet = allAgents[currentAgentConfigSet] || {};
-			const parts = specValue.split(',').map((s) => s.trim()).filter(Boolean);
-			agentSet[mode] = parts.length > 1 ? parts : parts[0];
+			agentSet[mode] = provider + '/' + model;
 			allAgents[currentAgentConfigSet] = agentSet;
 			await api.put('/api/config', { agents: allAgents });
 		});
+
+		bindProviderChange(modelList);
 	});
 
 	// Add new config set
@@ -920,8 +1028,13 @@ const init = () => {
 		refreshUsageBtn.addEventListener('click', () => { loadUsage(); });
 	}
 
+	// 预加载 modelList 到 sessionStorage
+	getModelList();
+
 	loadDashboard();
-	setInterval(loadDashboard, 15000);
+	setInterval(() => {
+		loadDashboard(false);
+	}, 15000);
 };
 
 document.addEventListener('DOMContentLoaded', init);
