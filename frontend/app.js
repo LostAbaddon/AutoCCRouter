@@ -51,6 +51,9 @@ const tabs = () => {
 			else if (tab === 'config') {
 				loadConfigEditor();
 			}
+			else if (tab === 'usage') {
+				loadUsage();
+			}
 		});
 	});
 };
@@ -234,101 +237,146 @@ const mappingFormHtml = (mapping, providers) => {
 
 // -------------------- Agent (Working Mode) forms and handlers --------------------
 
-const agentFormHtml = (mode, spec, providers) => {
-	// spec is "providerName/modelName"
-	let providerName = '';
-	let modelName = '';
-	if (spec && typeof spec === 'string') {
-		const idx = spec.indexOf('/');
-		if (idx > 0) {
-			providerName = spec.substring(0, idx);
-			modelName = spec.substring(idx + 1);
-		}
-	}
+let currentAgentConfigSet = 'defaults';
 
-	const providerOptions = providers.map((prov) =>
-		`<option value="${esc(prov)}" ${providerName === prov ? 'selected' : ''}>${esc(prov)}</option>`
-	).join('');
-
+const agentModeFormHtml = (mode, spec) => {
 	return `
 		<div class="form-group">
-			<label>Working Mode Name</label>
+			<label>Mode Name</label>
 			<input id="form-mode" value="${esc(mode || '')}" ${mode ? 'disabled' : ''} placeholder="e.g. coding, writing, research">
 			<span style="font-size:11px;color:#8b949e">Special modes: "default" (fallback), "quick" (classifier model)</span>
 		</div>
 		<div class="form-group">
-			<label>Provider</label>
-			<select id="form-agent-provider">
-				<option value="">Select a provider...</option>
-				${providerOptions}
-			</select>
-		</div>
-		<div class="form-group">
-			<label>Model Name</label>
-			<input id="form-agent-model" value="${esc(modelName)}" placeholder="e.g. deepseek-v4-pro">
+			<label>Provider / Model Spec</label>
+			<input id="form-agent-spec" value="${esc(Array.isArray(spec) ? spec.join(', ') : (spec || ''))}" placeholder="e.g. deepseek/deepseek-v4-pro, google/gemini-3.1-pro-preview">
+			<span style="font-size:11px;color:#8b949e">Comma-separate multiple specs for random selection</span>
 		</div>
 	`;
 };
 
 const loadAgents = async () => {
 	const config = await api.get('/api/config');
-	const agents = config.agents || {};
+	const allAgents = config.agents || {};
+
+	// Populate config set dropdown
+	const select = document.getElementById('agent-config-set');
+	select.innerHTML = '';
+	const configSets = Object.keys(allAgents).filter((k) => typeof allAgents[k] === 'object' && !Array.isArray(allAgents[k]));
+	if (configSets.length === 0) {
+		// 向后兼容：扁平 agents → 当作 defaults
+		const flatKeys = Object.keys(allAgents).filter((k) => typeof allAgents[k] === 'string' || Array.isArray(allAgents[k]));
+		if (flatKeys.length > 0) {
+			configSets.push('defaults');
+		}
+	}
+	configSets.forEach((name) => {
+		select.innerHTML += `<option value="${esc(name)}" ${name === currentAgentConfigSet ? 'selected' : ''}>${esc(name)}</option>`;
+	});
+	if (!configSets.includes(currentAgentConfigSet)) {
+		currentAgentConfigSet = configSets[0] || 'defaults';
+		if (configSets.length > 0) {
+			select.value = currentAgentConfigSet;
+		}
+	}
+
+	// Show/hide delete button
+	const delBtn = document.getElementById('delete-config-set-btn');
+	if (currentAgentConfigSet === 'defaults' || configSets.length <= 1) {
+		delBtn.style.display = 'none';
+	}
+	else {
+		delBtn.style.display = '';
+	}
+
+	// Get current config set's modes
+	const agentSet = allAgents[currentAgentConfigSet] || {};
 	const table = document.getElementById('agents-table');
 	table.innerHTML = '';
 
-	for (const [mode, spec] of Object.entries(agents)) {
+	for (const [mode, spec] of Object.entries(agentSet)) {
+		if (typeof spec !== 'string' && !Array.isArray(spec)) {
+			continue;
+		}
+		const displaySpec = Array.isArray(spec) ? spec.join(', ') : spec;
 		let providerName = '';
 		let modelName = '';
-		if (spec && typeof spec === 'string') {
-			const idx = spec.indexOf('/');
+		const firstSpec = Array.isArray(spec) ? spec[0] : spec;
+		if (firstSpec && typeof firstSpec === 'string') {
+			const idx = firstSpec.indexOf('/');
 			if (idx > 0) {
-				providerName = spec.substring(0, idx);
-				modelName = spec.substring(idx + 1);
+				providerName = firstSpec.substring(0, idx);
+				modelName = firstSpec.substring(idx + 1);
 			}
 		}
+		const isArray = Array.isArray(spec);
 		table.innerHTML += `<tr>
 			<td><code>${esc(mode)}</code></td>
-			<td>${esc(providerName)}</td>
-			<td><code>${esc(modelName)}</code></td>
+			<td>${esc(providerName)}${isArray ? ' <span style="color:#d29922">+more</span>' : ''}</td>
+			<td><code>${esc(modelName)}${isArray ? ' <span style="color:#d29922">+more</span>' : ''}</code></td>
+			<td title="${esc(displaySpec)}" style="font-size:11px;color:#8b949e;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(displaySpec)}</td>
 			<td class="actions">
-				<button class="btn-secondary btn-sm" data-action="edit-agent" data-mode="${esc(mode)}">Edit</button>
-				<button class="btn-danger" data-action="delete-agent" data-mode="${esc(mode)}">Delete</button>
+				<button class="btn-secondary btn-sm" data-action="edit-agent-mode" data-mode="${esc(mode)}">Edit</button>
+				<button class="btn-danger" data-action="delete-agent-mode" data-mode="${esc(mode)}">Delete</button>
 			</td>
 		</tr>`;
+	}
+
+	// modeCacheTtl
+	const ttlInput = document.getElementById('mode-cache-ttl');
+	if (ttlInput) {
+		ttlInput.value = config.modeCacheTtl != null ? config.modeCacheTtl : 60;
+	}
+	// conversationGroups
+	const cgInput = document.getElementById('conversation-groups');
+	if (cgInput) {
+		cgInput.value = config.conversationGroups != null ? config.conversationGroups : 5;
 	}
 
 	bindAgentActions();
 };
 
 const bindAgentActions = () => {
-	document.querySelectorAll('[data-action="edit-agent"]').forEach((btn) => {
+	// Config set selector change
+	const select = document.getElementById('agent-config-set');
+	if (select) {
+		select.onchange = () => {
+			currentAgentConfigSet = select.value;
+			loadAgents();
+		};
+	}
+
+	// Edit mode
+	document.querySelectorAll('[data-action="edit-agent-mode"]').forEach((btn) => {
 		btn.addEventListener('click', async () => {
 			const mode = btn.dataset.mode;
 			const config = await api.get('/api/config');
-			const agents = config.agents || {};
-			const spec = agents[mode] || '';
+			const allAgents = config.agents || {};
+			const agentSet = allAgents[currentAgentConfigSet] || {};
+			const spec = agentSet[mode] || '';
 
-			showModal('Edit Agent', agentFormHtml(mode, spec, Object.keys(config.providers || {})), async () => {
-				const provider = document.getElementById('form-agent-provider').value;
-				const model = document.getElementById('form-agent-model').value.trim();
-				if (!provider || !model) {
-					alert('Provider and Model are required');
+			showModal(`Edit Mode: ${mode}`, agentModeFormHtml(mode, spec), async () => {
+				const specValue = document.getElementById('form-agent-spec').value.trim();
+				if (!specValue) {
+					alert('Spec is required');
 					return;
 				}
-				agents[mode] = `${provider}/${model}`;
-				await api.put('/api/config', { agents });
+				const parts = specValue.split(',').map((s) => s.trim()).filter(Boolean);
+				agentSet[mode] = parts.length > 1 ? parts : parts[0];
+				await api.put('/api/config', { agents: allAgents });
 			});
 		});
 	});
 
-	document.querySelectorAll('[data-action="delete-agent"]').forEach((btn) => {
+	// Delete mode
+	document.querySelectorAll('[data-action="delete-agent-mode"]').forEach((btn) => {
 		btn.addEventListener('click', async () => {
 			const mode = btn.dataset.mode;
-			if (confirm(`Delete agent "${mode}"?`)) {
+			if (confirm(`Delete mode "${mode}" from "${currentAgentConfigSet}"?`)) {
 				const config = await api.get('/api/config');
-				const agents = config.agents || {};
-				delete agents[mode];
-				await api.put('/api/config', { agents });
+				const allAgents = config.agents || {};
+				const agentSet = allAgents[currentAgentConfigSet] || {};
+				delete agentSet[mode];
+				await api.put('/api/config', { agents: allAgents });
 				loadAgents();
 			}
 		});
@@ -465,6 +513,264 @@ const bindTableActions = () => {
 	});
 };
 
+// -------------------- Usage --------------------
+
+let usageCharts = {};
+
+const formatTokens = (n) => {
+	if (n >= 1000000) {
+		return (n / 1000000).toFixed(1) + 'M';
+	}
+	if (n >= 1000) {
+		return (n / 1000).toFixed(1) + 'K';
+	}
+	return String(n);
+};
+
+const chartColors = [
+	'#58a6ff', '#3fb950', '#d29922', '#f78166', '#a371f7',
+	'#8b949e', '#79c0ff', '#56d364', '#e3b341', '#ff7b72',
+	'#bc8cff', '#6e7681', '#388bfd', '#2ea043', '#9e6a03',
+];
+
+const destroyUsageCharts = () => {
+	Object.values(usageCharts).forEach((c) => c.destroy());
+	usageCharts = {};
+};
+
+const loadUsage = async () => {
+	const fromInput = document.getElementById('usage-from');
+	const toInput = document.getElementById('usage-to');
+	const unitSelect = document.getElementById('usage-unit');
+
+	const from = fromInput ? fromInput.value : '';
+	const to = toInput ? toInput.value : '';
+	const unit = unitSelect ? unitSelect.value : 'day';
+
+	const params = new URLSearchParams();
+	if (from) {
+		params.set('from', from);
+	}
+	if (to) {
+		params.set('to', to);
+	}
+	params.set('unit', unit);
+
+	const data = await api.get(`/api/usage?${params.toString()}`);
+	const summary = document.getElementById('usage-summary');
+	if (summary) {
+		summary.innerHTML = '';
+	}
+
+	destroyUsageCharts();
+
+	if (!data || !Array.isArray(data.entries) || data.entries.length === 0) {
+		document.getElementById('usage-chart-calls').parentElement.style.display = '';
+		document.getElementById('usage-chart-tokens').parentElement.style.display = '';
+		if (summary) {
+			summary.innerHTML = '<div class="card" style="text-align:center;color:#8b949e;padding:48px">No usage data in the selected range</div>';
+		}
+		return;
+	}
+
+	// 聚合: 按 provider|model 汇总 (忽略 period)
+	const aggMap = new Map();
+	let totalCalls = 0;
+	let totalInput = 0;
+	let totalOutput = 0;
+	let totalCache = 0;
+
+	data.entries.forEach((entry) => {
+		const key = `${entry.provider}|${entry.model}`;
+		const agg = aggMap.get(key) || { provider: entry.provider, model: entry.model, calls: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0 };
+		agg.calls += entry.calls || 0;
+		agg.inputTokens += entry.inputTokens || 0;
+		agg.outputTokens += entry.outputTokens || 0;
+		agg.cacheTokens += entry.cacheTokens || 0;
+		aggMap.set(key, agg);
+
+		totalCalls += entry.calls || 0;
+		totalInput += entry.inputTokens || 0;
+		totalOutput += entry.outputTokens || 0;
+		totalCache += entry.cacheTokens || 0;
+	});
+
+	const aggregated = [...aggMap.values()].sort((a, b) => b.calls - a.calls);
+
+	let totalModeActivations = 0;
+	if (data.modes) {
+		data.modes.forEach((m) => { totalModeActivations += m.activations || 0; });
+	}
+
+	// 摘要卡片
+	if (summary) {
+		const modeCard = totalModeActivations > 0
+			? `<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Mode Switches</div><div class="big-number">${totalModeActivations.toLocaleString()}</div></div>`
+			: '';
+		summary.innerHTML = `
+			<div style="display:flex;gap:16px;flex-wrap:wrap">
+				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Calls</div><div class="big-number">${totalCalls.toLocaleString()}</div></div>
+				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Input</div><div class="big-number">${formatTokens(totalInput)}</div></div>
+				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Output</div><div class="big-number">${formatTokens(totalOutput)}</div></div>
+				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Cache</div><div class="big-number">${formatTokens(totalCache)}</div></div>
+				${modeCard}
+			</div>
+		`;
+	}
+
+	const labels = aggregated.map((a) => a.model.length > 30 ? a.model.substring(0, 28) + '...' : a.model);
+	const providerLabels = aggregated.map((a) => a.provider);
+
+	// Chart.js 暗色主题默认配置
+	const darkGrid = '#21262d';
+	const darkText = '#8b949e';
+
+	// Calls 柱状图
+	const callsCanvas = document.getElementById('usage-chart-calls');
+	const callsCtx = callsCanvas.getContext('2d');
+	usageCharts.calls = new Chart(callsCtx, {
+		type: 'bar',
+		data: {
+			labels,
+			datasets: [{
+				label: 'Calls',
+				data: aggregated.map((a) => a.calls),
+				backgroundColor: aggregated.map((_, i) => chartColors[i % chartColors.length]),
+				borderColor: '#0f1117',
+				borderWidth: 1,
+			}],
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: false,
+			plugins: {
+				legend: { display: false },
+				tooltip: {
+					callbacks: {
+						label: (ctx) => `${ctx.raw.toLocaleString()} calls`,
+						afterLabel: (ctx) => `${providerLabels[ctx.dataIndex]}`,
+					},
+				},
+			},
+			scales: {
+				x: {
+					ticks: { color: darkText, maxRotation: 45, font: { size: 10 } },
+					grid: { color: darkGrid },
+				},
+				y: {
+					ticks: { color: darkText, beginAtZero: true },
+					grid: { color: darkGrid },
+				},
+			},
+		},
+	});
+
+	// Token 分组柱状图
+	const tokensCanvas = document.getElementById('usage-chart-tokens');
+	const tokensCtx = tokensCanvas.getContext('2d');
+	usageCharts.tokens = new Chart(tokensCtx, {
+		type: 'bar',
+		data: {
+			labels,
+			datasets: [
+				{
+					label: 'Input',
+					data: aggregated.map((a) => a.inputTokens),
+					backgroundColor: '#58a6ff',
+					borderColor: '#0f1117',
+					borderWidth: 1,
+				},
+				{
+					label: 'Output',
+					data: aggregated.map((a) => a.outputTokens),
+					backgroundColor: '#3fb950',
+					borderColor: '#0f1117',
+					borderWidth: 1,
+				},
+				{
+					label: 'Cache',
+					data: aggregated.map((a) => a.cacheTokens),
+					backgroundColor: '#d29922',
+					borderColor: '#0f1117',
+					borderWidth: 1,
+				},
+			],
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: false,
+			plugins: {
+				legend: {
+					labels: { color: darkText, usePointStyle: true, padding: 16 },
+				},
+				tooltip: {
+					callbacks: {
+						label: (ctx) => `${ctx.dataset.label}: ${formatTokens(ctx.raw)} tokens`,
+						afterLabel: (ctx) => `${providerLabels[ctx.dataIndex]}`,
+					},
+				},
+			},
+			scales: {
+				x: {
+					ticks: { color: darkText, maxRotation: 45, font: { size: 10 } },
+					grid: { color: darkGrid },
+				},
+				y: {
+					ticks: { color: darkText, beginAtZero: true, callback: (v) => formatTokens(v) },
+					grid: { color: darkGrid },
+				},
+			},
+		},
+	});
+
+	// Mode activations chart
+	const modesCanvas = document.getElementById('usage-chart-modes');
+	if (modesCanvas && data.modes && data.modes.length > 0) {
+		modesCanvas.parentElement.parentElement.style.display = '';
+		const modeAgg = new Map();
+		data.modes.forEach((m) => {
+			const cur = modeAgg.get(m.mode) || 0;
+			modeAgg.set(m.mode, cur + m.activations);
+		});
+		const modeLabels = [...modeAgg.keys()];
+		const modeData = [...modeAgg.values()];
+		const modeColors = [...chartColors].slice(0, modeLabels.length);
+		usageCharts.modes = new Chart(modesCanvas.getContext('2d'), {
+			type: 'bar',
+			data: {
+				labels: modeLabels,
+				datasets: [{
+					label: 'Activations',
+					data: modeData,
+					backgroundColor: modeColors,
+					borderColor: '#0f1117',
+					borderWidth: 1,
+				}],
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				animation: false,
+				plugins: {
+					legend: { display: false },
+					tooltip: {
+						callbacks: { label: (ctx) => `${ctx.raw.toLocaleString()} activations` },
+					},
+				},
+				scales: {
+					x: { ticks: { color: darkText }, grid: { color: darkGrid } },
+					y: { ticks: { color: darkText, beginAtZero: true }, grid: { color: darkGrid } },
+				},
+			},
+		});
+	}
+	else if (modesCanvas) {
+		modesCanvas.parentElement.parentElement.style.display = 'none';
+	}
+};
+
 const loadConfigEditor = async () => {
 	const config = await api.get('/api/config');
 	const editor = document.getElementById('config-editor');
@@ -507,20 +813,65 @@ const init = () => {
 		});
 	});
 
+	// Add mode to current config set
 	document.getElementById('add-agent-btn').addEventListener('click', async () => {
 		const config = await api.get('/api/config');
-		showModal('Add Agent', agentFormHtml('', '', Object.keys(config.providers || {})), async () => {
+		showModal('Add Mode', agentModeFormHtml('', ''), async () => {
 			const mode = document.getElementById('form-mode').value.trim();
-			const provider = document.getElementById('form-agent-provider').value;
-			const model = document.getElementById('form-agent-model').value.trim();
-			if (!mode || !provider || !model) {
-				alert('Mode name, Provider, and Model are all required');
+			const specValue = document.getElementById('form-agent-spec').value.trim();
+			if (!mode || !specValue) {
+				alert('Mode name and spec are required');
 				return;
 			}
-			const agents = config.agents || {};
-			agents[mode] = `${provider}/${model}`;
-			await api.put('/api/config', { agents });
+			const allAgents = config.agents || {};
+			const agentSet = allAgents[currentAgentConfigSet] || {};
+			const parts = specValue.split(',').map((s) => s.trim()).filter(Boolean);
+			agentSet[mode] = parts.length > 1 ? parts : parts[0];
+			allAgents[currentAgentConfigSet] = agentSet;
+			await api.put('/api/config', { agents: allAgents });
 		});
+	});
+
+	// Add new config set
+	document.getElementById('add-config-set-btn').addEventListener('click', async () => {
+		showModal('New Config Set', `
+			<div class="form-group">
+				<label>Config Set Name</label>
+				<input id="form-config-name" placeholder="e.g. coding-only, research">
+			</div>
+		`, async () => {
+			const name = document.getElementById('form-config-name').value.trim();
+			if (!name) {
+				alert('Name is required');
+				return;
+			}
+			const config = await api.get('/api/config');
+			const allAgents = config.agents || {};
+			if (allAgents[name]) {
+				alert(`Config set "${name}" already exists`);
+				return;
+			}
+			allAgents[name] = { default: 'deepseek/deepseek-v4-pro' };
+			await api.put('/api/config', { agents: allAgents });
+			currentAgentConfigSet = name;
+			loadAgents();
+		});
+	});
+
+	// Delete current config set
+	document.getElementById('delete-config-set-btn').addEventListener('click', async () => {
+		if (currentAgentConfigSet === 'defaults') {
+			alert('Cannot delete the defaults config set');
+			return;
+		}
+		if (confirm(`Delete config set "${currentAgentConfigSet}" and all its modes?`)) {
+			const config = await api.get('/api/config');
+			const allAgents = config.agents || {};
+			delete allAgents[currentAgentConfigSet];
+			await api.put('/api/config', { agents: allAgents });
+			currentAgentConfigSet = 'defaults';
+			loadAgents();
+		}
 	});
 
 	document.getElementById('save-config-btn').addEventListener('click', async () => {
@@ -536,6 +887,38 @@ const init = () => {
 			alert(`Invalid JSON: ${e.message}`);
 		}
 	});
+
+	document.getElementById('save-mode-cache-ttl').addEventListener('click', async () => {
+		const ttlInput = document.getElementById('mode-cache-ttl');
+		const ttl = parseInt(ttlInput.value, 10);
+		if (isNaN(ttl) || ttl < 0) {
+			alert('Please enter a valid number (0 or greater)');
+			return;
+		}
+		await api.put('/api/config', { modeCacheTtl: ttl });
+		const status = document.getElementById('mode-cache-ttl-status');
+		status.textContent = 'Saved!';
+		setTimeout(() => { status.textContent = ''; }, 3000);
+	});
+
+	document.getElementById('save-conversation-groups').addEventListener('click', async () => {
+		const cgInput = document.getElementById('conversation-groups');
+		const cg = parseInt(cgInput.value, 10);
+		if (isNaN(cg) || cg < 1) {
+			alert('Please enter a valid number (1 or greater)');
+			return;
+		}
+		await api.put('/api/config', { conversationGroups: cg });
+		const status = document.getElementById('conversation-groups-status');
+		status.textContent = 'Saved!';
+		setTimeout(() => { status.textContent = ''; }, 3000);
+	});
+
+	// Usage tab controls
+	const refreshUsageBtn = document.getElementById('refresh-usage-btn');
+	if (refreshUsageBtn) {
+		refreshUsageBtn.addEventListener('click', () => { loadUsage(); });
+	}
 
 	loadDashboard();
 	setInterval(loadDashboard, 15000);

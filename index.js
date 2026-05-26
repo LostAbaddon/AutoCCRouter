@@ -31,14 +31,35 @@ adminServer.listen(adminPort, proxyHost, () => {
 
 const shutdown = () => {
 	log('info', 'Shutting down...');
+	let closer = setTimeout(() => {
+		log('info', 'Shutted down forcely');
+		process.exit(0);
+	}, 1000);
 	proxyServer.close(() => {
 		adminServer.close(() => {
+			if (closer) clearTimeout(closer);
+			log('info', 'Shutted down');
 			process.exit(0);
 		});
 	});
 };
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => {
+	log('info', 'Received SIGINT, shutting down');
+	shutdown();
+});
+process.on('SIGTERM', () => {
+	log('warn', `Received SIGTERM (pid=${process.pid}, ppid=${process.ppid}) — ignored. Use Ctrl+C (SIGINT) to stop.`);
+	shutdown();
+});
+
+// 防止未捕获异常导致进程崩溃
+process.on('uncaughtException', (err) => {
+	log('error', `Uncaught exception: ${err.message}`, err.stack || '');
+});
+
+process.on('unhandledRejection', (reason) => {
+	log('error', `Unhandled rejection: ${reason}`);
+});
 
 module.exports = { getConfig, proxyServer, adminServer };

@@ -5,6 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>cc2llm — Admin</title>
 	<link rel="stylesheet" href="style.css">
+	<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 	<header>
@@ -16,6 +17,7 @@
 			<button class="tab" data-tab="mappings">Model Mappings</button>
 			<button class="tab" data-tab="agents">Agents</button>
 			<button class="tab" data-tab="prompts">Prompts</button>
+			<button class="tab" data-tab="usage">Usage</button>
 			<button class="tab" data-tab="config">Raw Config</button>
 		</nav>
 	</header>
@@ -89,27 +91,89 @@
 		</section>
 
 		<section id="tab-agents" class="tab-content">
-				<div class="toolbar">
-					<button id="add-agent-btn" class="btn-primary">+ Add Agent</button>
+			<div class="card" style="margin-bottom:16px">
+				<h3>AUTO Mode Settings</h3>
+				<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+					<label style="white-space:nowrap;font-weight:500">Mode Cache TTL (seconds):</label>
+					<input id="mode-cache-ttl" type="number" min="0" max="3600" step="1" style="width:100px;background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:14px">
+					<button id="save-mode-cache-ttl" class="btn-primary btn-sm">Save</button>
+					<span id="mode-cache-ttl-status" style="color:#3fb950;font-size:12px"></span>
 				</div>
-				<table>
-					<thead>
-						<tr><th>Working Mode</th><th>Provider</th><th>Model</th><th>Actions</th></tr>
-					</thead>
-					<tbody id="agents-table"></tbody>
-				</table>
-			</section>
+				<p style="font-size:11px;color:#8b949e;margin-top:8px">
+					When a working mode result was obtained within this time, skip re-classification and reuse the cached mode. Set to 0 to disable caching.
+				</p>
+			</div>
+			<div class="card" style="margin-bottom:16px">
+				<h3>Conversation Trimming</h3>
+				<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+					<label style="white-space:nowrap;font-weight:500">Max Groups:</label>
+					<input id="conversation-groups" type="number" min="1" max="50" step="1" style="width:80px;background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:14px">
+					<button id="save-conversation-groups" class="btn-primary btn-sm">Save</button>
+					<span id="conversation-groups-status" style="color:#3fb950;font-size:12px"></span>
+				</div>
+				<p style="font-size:11px;color:#8b949e;margin-top:8px">
+					Auto mode keeps only the last N text-only conversation groups (user→assistant). Tool calls and results are stripped before grouping.
+				</p>
+			</div>
+			<div class="card" style="margin-bottom:16px">
+				<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+					<label style="white-space:nowrap;font-weight:500">Config Set:</label>
+					<select id="agent-config-set" style="background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:14px;min-width:180px"></select>
+					<button id="add-config-set-btn" class="btn-primary btn-sm">+ New Config Set</button>
+					<button id="delete-config-set-btn" class="btn-danger" style="display:none">Delete Config Set</button>
+				</div>
+				<p style="font-size:11px;color:#8b949e;margin-top:8px">
+					Each config set maps working modes to provider/model pairs. Target "auto" in Model Mappings selects defaults; a named target selects that config set.
+				</p>
+			</div>
+			<div class="toolbar">
+				<button id="add-agent-btn" class="btn-primary">+ Add Mode</button>
+			</div>
+			<table>
+				<thead>
+					<tr><th>Mode</th><th>Provider</th><th>Model</th><th>All Specs</th><th>Actions</th></tr>
+				</thead>
+				<tbody id="agents-table"></tbody>
+			</table>
+		</section>
 
-			<section id="tab-prompts" class="tab-content">
-				<table>
-					<thead>
-						<tr><th>Name</th><th>Description</th><th>Content</th><th>Actions</th></tr>
-					</thead>
-					<tbody id="prompts-table"></tbody>
-				</table>
-			</section>
+		<section id="tab-prompts" class="tab-content">
+			<table>
+				<thead>
+					<tr><th>Name</th><th>Description</th><th>Content</th><th>Actions</th></tr>
+				</thead>
+				<tbody id="prompts-table"></tbody>
+			</table>
+		</section>
 
-			<section id="tab-config" class="tab-content">
+		<section id="tab-usage" class="tab-content">
+			<div class="card" style="margin-bottom:16px">
+				<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+					<label style="white-space:nowrap;font-weight:500">From:</label>
+					<input id="usage-from" type="date" style="background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:14px">
+					<label style="white-space:nowrap;font-weight:500">To:</label>
+					<input id="usage-to" type="date" style="background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:14px">
+					<label style="white-space:nowrap;font-weight:500">Unit:</label>
+					<select id="usage-unit" style="background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:14px">
+						<option value="day">Day</option>
+						<option value="week">Week</option>
+						<option value="month">Month</option>
+						<option value="year">Year</option>
+					</select>
+					<button id="refresh-usage-btn" class="btn-primary btn-sm">Refresh</button>
+				</div>
+			</div>
+			<div id="usage-summary"></div>
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+				<div class="card"><h3>Calls by Provider / Model</h3><div style="height:320px"><canvas id="usage-chart-calls"></canvas></div></div>
+				<div class="card"><h3>Tokens by Provider / Model</h3><div style="height:320px"><canvas id="usage-chart-tokens"></canvas></div></div>
+			</div>
+			<div style="margin-top:16px">
+				<div class="card"><h3>Working Mode Activations</h3><div style="height:260px"><canvas id="usage-chart-modes"></canvas></div></div>
+			</div>
+		</section>
+
+		<section id="tab-config" class="tab-content">
 			<div class="toolbar">
 				<button id="save-config-btn" class="btn-primary">Save Config</button>
 				<span id="config-save-status"></span>
