@@ -4,12 +4,24 @@
 		"host": "127.0.0.1",
 		"adminPort": 8766
 	},
+	"defaultMaxTokens": 131072,
 	"providers": {
 		"deepseek": {
 			"type": "anthropic",
 			"apiKey": "your-api-key-here",
 			"baseUrl": "https://api.deepseek.com/anthropic",
-			"proxy": ""
+			"proxy": "",
+			"models": [
+				{
+					"name": "deepseek-v4-pro",
+					"maxTokens": 393216
+				},
+				{
+					"name": "deepseek-v4-flash",
+					"maxTokens": 393216
+				}
+			],
+			"defaultMaxTokens": 393216
 		},
 		"openai": {
 			"type": "openai",
@@ -33,20 +45,190 @@
 			"type": "openai",
 			"apiKey": "your-api-key-here",
 			"baseUrl": "https://api.minimax.chat/v1",
-			"proxy": ""
+			"proxy": "",
+			"models": [
+				{
+					"name": "minimax-m2.7",
+					"maxTokens": 196608
+				},
+				{
+					"name": "minimax-m2.7-highspeed",
+					"maxTokens": 196608
+				},
+				{
+					"name": "minimax-m2.5",
+					"maxTokens": 196608
+				}
+			],
+			"defaultMaxTokens": 196608
 		},
 		"openrouter": {
 			"type": "openai",
 			"apiKey": "your-api-key-here",
 			"baseUrl": "https://openrouter.ai/api/v1",
-			"proxy": ""
+			"proxy": "",
+			"models": [
+				{
+					"name": "openai/gpt-5.4-pro",
+					"maxTokens": 128000
+				},
+				{
+					"name": "openai/gpt-5.4",
+					"maxTokens": 128000
+				},
+				{
+					"name": "openai/gpt-5.4-mini",
+					"maxTokens": 128000
+				},
+				{
+					"name": "openai/gpt-5.4-nano",
+					"maxTokens": 128000
+				},
+				{
+					"name": "anthropic/claude-opus-4.7",
+					"maxTokens": 131072
+				},
+				{
+					"name": "anthropic/claude-opus-4.6-fast",
+					"maxTokens": 131072
+				},
+				{
+					"name": "anthropic/claude-sonnet-4.6",
+					"maxTokens": 65536
+				},
+				{
+					"name": "anthropic/claude-haiku-4.5",
+					"maxTokens": 65536
+				},
+				{
+					"name": "google/gemini-3.1-pro-preview-customtools",
+					"maxTokens": 65536
+				},
+				{
+					"name": "google/gemini-3.1-pro",
+					"maxTokens": 65536
+				},
+				{
+					"name": "google/gemini-3-flash-preview",
+					"maxTokens": 65536
+				},
+				{
+					"name": "google/gemini-3.1-flash-lite-preview",
+					"maxTokens": 65536
+				},
+				{
+					"name": "x-ai/grok-4.20-multi-agent",
+					"maxTokens": 2000000
+				},
+				{
+					"name": "x-ai/grok-4.20",
+					"maxTokens": 2000000
+				},
+				{
+					"name": "minimax/minimax-m2.7",
+					"maxTokens": 196608
+				},
+				{
+					"name": "moonshotai/kimi-k2.5",
+					"maxTokens": 32768
+				},
+				{
+					"name": "z-ai/glm-5.1",
+					"maxTokens": 131072
+				},
+				{
+					"name": "z-ai/glm-5v-turbo",
+					"maxTokens": 131072
+				},
+				{
+					"name": "xiaomi/mimo-v2.5-pro",
+					"maxTokens": 134246
+				},
+				{
+					"name": "xiaomi/mimo-v2.5",
+					"maxTokens": 134246
+				},
+				{
+					"name": "xiaomi/mimo-v2-omni",
+					"maxTokens": 67072
+				},
+				{
+					"name": "qwen/qwen3.6-max-preview",
+					"maxTokens": 67072
+				},
+				{
+					"name": "qwen/qwen3.6-plus",
+					"maxTokens": 67072
+				},
+				{
+					"name": "qwen/qwen3.6-flash",
+					"maxTokens": 67072
+				},
+				{
+					"name": "stepfun/step-3.5-flash",
+					"maxTokens": 67072
+				},
+				{
+					"name": "google/gemma-4-31b-it:free",
+					"maxTokens": 32768
+				},
+				{
+					"name": "google/gemma-4-26b-a4b-it:free",
+					"maxTokens": 32768
+				},
+				{
+					"name": "nvidia/nemotron-3-super-120b-a12b:free",
+					"maxTokens": 32768
+				},
+				{
+					"name": "nvidia/nemotron-3-nano-30b-a3b:free",
+					"maxTokens": 32768
+				},
+				{
+					"name": "tencent/hy3-preview",
+					"maxTokens": 131072
+				}
+			],
+			"defaultMaxTokens": 131072
+		},
+		"auto": {
+			"type": "auto"
 		}
 	},
+	"agents": {
+		"default": "deepseek/deepseek-v4-pro",
+		"quick": "google/gemini-2.5-flash-preview",
+		"plan": "deepseek/deepseek-v4-pro",
+		"code": "deepseek/deepseek-v4-pro",
+		"writing": "deepseek/deepseek-v4-flash",
+		"research": "google/gemini-3.1-pro-preview"
+	},
 	"modelMapping": [
-		{ "prefix": "claude-opus", "target": "deepseek-v4-pro", "provider": "deepseek" },
-		{ "prefix": "claude-sonnet", "target": "deepseek-v4-pro", "provider": "deepseek" },
-		{ "prefix": "claude-haiku", "target": "deepseek-v4-flash", "provider": "deepseek" },
-			{ "prefix": "", "target": "", "provider": "deepseek" }
+		{
+			"prefix": "auto",
+			"target": "auto",
+			"provider": "auto"
+		},
+		{
+			"prefix": "claude-opus",
+			"target": "deepseek-v4-pro",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "claude-sonnet",
+			"target": "deepseek-v4-pro",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "claude-haiku",
+			"target": "deepseek-v4-flash",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "",
+			"target": "",
+			"provider": "deepseek"
+		}
 	],
 	"logLevel": "info"
 }

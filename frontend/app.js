@@ -42,7 +42,13 @@ const tabs = () => {
 				content.classList.add('active');
 			}
 
-			if (tab === 'config') {
+			if (tab === 'agents') {
+				loadAgents();
+			}
+			else if (tab === 'prompts') {
+				loadPrompts();
+			}
+			else if (tab === 'config') {
 				loadConfigEditor();
 			}
 		});
@@ -226,6 +232,164 @@ const mappingFormHtml = (mapping, providers) => {
 	`;
 };
 
+// -------------------- Agent (Working Mode) forms and handlers --------------------
+
+const agentFormHtml = (mode, spec, providers) => {
+	// spec is "providerName/modelName"
+	let providerName = '';
+	let modelName = '';
+	if (spec && typeof spec === 'string') {
+		const idx = spec.indexOf('/');
+		if (idx > 0) {
+			providerName = spec.substring(0, idx);
+			modelName = spec.substring(idx + 1);
+		}
+	}
+
+	const providerOptions = providers.map((prov) =>
+		`<option value="${esc(prov)}" ${providerName === prov ? 'selected' : ''}>${esc(prov)}</option>`
+	).join('');
+
+	return `
+		<div class="form-group">
+			<label>Working Mode Name</label>
+			<input id="form-mode" value="${esc(mode || '')}" ${mode ? 'disabled' : ''} placeholder="e.g. coding, writing, research">
+			<span style="font-size:11px;color:#8b949e">Special modes: "default" (fallback), "quick" (classifier model)</span>
+		</div>
+		<div class="form-group">
+			<label>Provider</label>
+			<select id="form-agent-provider">
+				<option value="">Select a provider...</option>
+				${providerOptions}
+			</select>
+		</div>
+		<div class="form-group">
+			<label>Model Name</label>
+			<input id="form-agent-model" value="${esc(modelName)}" placeholder="e.g. deepseek-v4-pro">
+		</div>
+	`;
+};
+
+const loadAgents = async () => {
+	const config = await api.get('/api/config');
+	const agents = config.agents || {};
+	const table = document.getElementById('agents-table');
+	table.innerHTML = '';
+
+	for (const [mode, spec] of Object.entries(agents)) {
+		let providerName = '';
+		let modelName = '';
+		if (spec && typeof spec === 'string') {
+			const idx = spec.indexOf('/');
+			if (idx > 0) {
+				providerName = spec.substring(0, idx);
+				modelName = spec.substring(idx + 1);
+			}
+		}
+		table.innerHTML += `<tr>
+			<td><code>${esc(mode)}</code></td>
+			<td>${esc(providerName)}</td>
+			<td><code>${esc(modelName)}</code></td>
+			<td class="actions">
+				<button class="btn-secondary btn-sm" data-action="edit-agent" data-mode="${esc(mode)}">Edit</button>
+				<button class="btn-danger" data-action="delete-agent" data-mode="${esc(mode)}">Delete</button>
+			</td>
+		</tr>`;
+	}
+
+	bindAgentActions();
+};
+
+const bindAgentActions = () => {
+	document.querySelectorAll('[data-action="edit-agent"]').forEach((btn) => {
+		btn.addEventListener('click', async () => {
+			const mode = btn.dataset.mode;
+			const config = await api.get('/api/config');
+			const agents = config.agents || {};
+			const spec = agents[mode] || '';
+
+			showModal('Edit Agent', agentFormHtml(mode, spec, Object.keys(config.providers || {})), async () => {
+				const provider = document.getElementById('form-agent-provider').value;
+				const model = document.getElementById('form-agent-model').value.trim();
+				if (!provider || !model) {
+					alert('Provider and Model are required');
+					return;
+				}
+				agents[mode] = `${provider}/${model}`;
+				await api.put('/api/config', { agents });
+			});
+		});
+	});
+
+	document.querySelectorAll('[data-action="delete-agent"]').forEach((btn) => {
+		btn.addEventListener('click', async () => {
+			const mode = btn.dataset.mode;
+			if (confirm(`Delete agent "${mode}"?`)) {
+				const config = await api.get('/api/config');
+				const agents = config.agents || {};
+				delete agents[mode];
+				await api.put('/api/config', { agents });
+				loadAgents();
+			}
+		});
+	});
+};
+
+// -------------------- Prompt editing --------------------
+
+const loadPrompts = async () => {
+	const prompts = await api.get('/api/prompts');
+	const table = document.getElementById('prompts-table');
+	table.innerHTML = '';
+
+	prompts.forEach((p) => {
+		const preview = p.content ? p.content.substring(0, 120).replace(/\n/g, ' ') + '...' : '(empty)';
+		table.innerHTML += `<tr>
+			<td><code>${esc(p.name)}</code></td>
+			<td style="font-size:12px;color:#8b949e">${esc(p.description || '')}</td>
+			<td style="font-size:12px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(preview)}</td>
+			<td class="actions">
+				<button class="btn-secondary btn-sm" data-action="edit-prompt" data-name="${esc(p.name)}">Edit</button>
+			</td>
+		</tr>`;
+	});
+
+	bindPromptActions();
+};
+
+const bindPromptActions = () => {
+	document.querySelectorAll('[data-action="edit-prompt"]').forEach((btn) => {
+		btn.addEventListener('click', async () => {
+			const name = btn.dataset.name;
+			const prompts = await api.get('/api/prompts');
+			const prompt = prompts.find((p) => p.name === name);
+			if (!prompt) {
+				return;
+			}
+
+			const bodyHtml = `
+				<div class="form-group">
+					<label>Name</label>
+					<input value="${esc(prompt.name)}" disabled>
+				</div>
+				<div class="form-group">
+					<label>Description</label>
+					<input value="${esc(prompt.description || '')}" disabled>
+				</div>
+				<div class="form-group">
+					<label>Content</label>
+					<textarea id="form-prompt-content" style="width:100%;height:300px;background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;font-family:'SF Mono','Menlo',monospace;font-size:13px;padding:12px;resize:vertical">${esc(prompt.content || '')}</textarea>
+				</div>
+			`;
+
+			showModal(`Edit Prompt: ${name}`, bodyHtml, async () => {
+				const content = document.getElementById('form-prompt-content').value;
+				await api.put(`/api/prompts/${encodeURIComponent(name)}`, { content });
+			});
+		});
+	});
+};
+
 const bindTableActions = () => {
 	document.querySelectorAll('[data-action="edit-provider"]').forEach((btn) => {
 		btn.addEventListener('click', async () => {
@@ -340,6 +504,22 @@ const init = () => {
 				return;
 			}
 			await api.post('/api/mappings', { prefix, target, provider });
+		});
+	});
+
+	document.getElementById('add-agent-btn').addEventListener('click', async () => {
+		const config = await api.get('/api/config');
+		showModal('Add Agent', agentFormHtml('', '', Object.keys(config.providers || {})), async () => {
+			const mode = document.getElementById('form-mode').value.trim();
+			const provider = document.getElementById('form-agent-provider').value;
+			const model = document.getElementById('form-agent-model').value.trim();
+			if (!mode || !provider || !model) {
+				alert('Mode name, Provider, and Model are all required');
+				return;
+			}
+			const agents = config.agents || {};
+			agents[mode] = `${provider}/${model}`;
+			await api.put('/api/config', { agents });
 		});
 	});
 
