@@ -663,6 +663,9 @@ const loadUsage = async () => {
 	destroyUsageCharts();
 
 	if (!data || !Array.isArray(data.entries) || data.entries.length === 0) {
+		document.getElementById('usage-chart-overall').parentElement.parentElement.style.display = '';
+		document.getElementById('usage-chart-models').parentElement.parentElement.style.display = '';
+		document.getElementById('usage-chart-providers').parentElement.parentElement.style.display = '';
 		document.getElementById('usage-chart-calls').parentElement.style.display = '';
 		document.getElementById('usage-chart-tokens').parentElement.style.display = '';
 		if (summary) {
@@ -716,14 +719,240 @@ const loadUsage = async () => {
 		`;
 	}
 
-	const labels = aggregated.map((a) => a.model.length > 30 ? a.model.substring(0, 28) + '...' : a.model);
-	const providerLabels = aggregated.map((a) => a.provider);
+	// 按 period 聚合 (用于折线图)
+	const periodAgg = new Map();
+	data.entries.forEach((entry) => {
+		const p = periodAgg.get(entry.period) || { calls: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0 };
+		p.calls += entry.calls || 0;
+		p.inputTokens += entry.inputTokens || 0;
+		p.outputTokens += entry.outputTokens || 0;
+		p.cacheTokens += entry.cacheTokens || 0;
+		periodAgg.set(entry.period, p);
+	});
+	const periods = [...periodAgg.keys()].sort();
+	const callsByPeriod = periods.map((p) => periodAgg.get(p).calls);
+	const inputByPeriod = periods.map((p) => periodAgg.get(p).inputTokens);
+	const outputByPeriod = periods.map((p) => periodAgg.get(p).outputTokens);
+	const cacheByPeriod = periods.map((p) => periodAgg.get(p).cacheTokens);
+
+	const maxCalls = Math.max(...callsByPeriod, 1);
+	const maxInput = Math.max(...inputByPeriod, 1);
+	const maxOutput = Math.max(...outputByPeriod, 1);
+	const maxCache = Math.max(...cacheByPeriod, 1);
+	const normalize = (arr, max) => arr.map((v) => (v / max) * 100);
 
 	// Chart.js 暗色主题默认配置
 	const darkGrid = '#21262d';
 	const darkText = '#8b949e';
 
-	// Calls 柱状图
+	// --- 折线图 1: 总体使用量百分比 ---
+	const overallCanvas = document.getElementById('usage-chart-overall');
+	const overallCtx = overallCanvas.getContext('2d');
+	usageCharts.overall = new Chart(overallCtx, {
+		type: 'line',
+		data: {
+			labels: periods,
+			datasets: [
+				{
+					label: 'Calls',
+					data: normalize(callsByPeriod, maxCalls),
+					borderColor: '#58a6ff',
+					backgroundColor: '#58a6ff',
+					tension: 0.2,
+					pointRadius: 3,
+					fill: false,
+				},
+				{
+					label: 'Input',
+					data: normalize(inputByPeriod, maxInput),
+					borderColor: '#3fb950',
+					backgroundColor: '#3fb950',
+					tension: 0.2,
+					pointRadius: 3,
+					fill: false,
+				},
+				{
+					label: 'Output',
+					data: normalize(outputByPeriod, maxOutput),
+					borderColor: '#d29922',
+					backgroundColor: '#d29922',
+					tension: 0.2,
+					pointRadius: 3,
+					fill: false,
+				},
+				{
+					label: 'Cache',
+					data: normalize(cacheByPeriod, maxCache),
+					borderColor: '#f78166',
+					backgroundColor: '#f78166',
+					tension: 0.2,
+					pointRadius: 3,
+					fill: false,
+				},
+			],
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: false,
+			plugins: {
+				legend: {
+					labels: { color: darkText, usePointStyle: true, padding: 16 },
+				},
+				tooltip: {
+					callbacks: {
+						label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toFixed(1)}%`,
+					},
+				},
+			},
+			scales: {
+				x: {
+					ticks: { color: darkText, maxRotation: 45, font: { size: 10 } },
+					grid: { color: darkGrid },
+				},
+				y: {
+					ticks: { color: darkText, beginAtZero: true, max: 100, callback: (v) => v + '%' },
+					grid: { color: darkGrid },
+				},
+			},
+		},
+	});
+
+	// --- 折线图 2: 每个模型的调用次数 ---
+	const modelPeriodAgg = new Map();
+	const modelTotalsMap = new Map();
+	data.entries.forEach((entry) => {
+		const key = `${entry.model}|${entry.period}`;
+		const cur = modelPeriodAgg.get(key) || 0;
+		modelPeriodAgg.set(key, cur + (entry.calls || 0));
+		const total = modelTotalsMap.get(entry.model) || 0;
+		modelTotalsMap.set(entry.model, total + (entry.calls || 0));
+	});
+
+	const TOP_N = 8;
+	const sortedModels = [...modelTotalsMap.entries()].sort((a, b) => b[1] - a[1]);
+	const topModels = sortedModels.slice(0, TOP_N);
+	const othersModels = sortedModels.slice(TOP_N);
+	const hasOtherModels = othersModels.length > 0;
+
+	const modelDatasets = topModels.map(([model], i) => ({
+		label: model.length > 30 ? model.substring(0, 28) + '...' : model,
+		data: periods.map((p) => modelPeriodAgg.get(`${model}|${p}`) || 0),
+		borderColor: chartColors[i % chartColors.length],
+		backgroundColor: chartColors[i % chartColors.length],
+		tension: 0.2,
+		pointRadius: 2,
+		fill: false,
+	}));
+
+	if (hasOtherModels) {
+		const othersData = periods.map((p) => {
+			let sum = 0;
+			for (const [model] of othersModels) {
+				sum += modelPeriodAgg.get(`${model}|${p}`) || 0;
+			}
+			return sum;
+		});
+		modelDatasets.push({
+			label: 'Others',
+			data: othersData,
+			borderColor: '#6e7681',
+			backgroundColor: '#6e7681',
+			borderDash: [4, 4],
+			tension: 0.2,
+			pointRadius: 2,
+			fill: false,
+		});
+	}
+
+	const modelsCanvas = document.getElementById('usage-chart-models');
+	const modelsCtx = modelsCanvas.getContext('2d');
+	usageCharts.models = new Chart(modelsCtx, {
+		type: 'line',
+		data: { labels: periods, datasets: modelDatasets },
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: false,
+			plugins: {
+				legend: {
+					labels: { color: darkText, usePointStyle: true, padding: 16, font: { size: 10 } },
+				},
+				tooltip: {
+					callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toLocaleString()} calls` },
+				},
+			},
+			scales: {
+				x: {
+					ticks: { color: darkText, maxRotation: 45, font: { size: 10 } },
+					grid: { color: darkGrid },
+				},
+				y: {
+					ticks: { color: darkText, beginAtZero: true },
+					grid: { color: darkGrid },
+				},
+			},
+		},
+	});
+
+	// --- 折线图 3: 每个 Provider 的调用次数 ---
+	const provPeriodAgg = new Map();
+	const provTotalsMap = new Map();
+	data.entries.forEach((entry) => {
+		const key = `${entry.provider}|${entry.period}`;
+		const cur = provPeriodAgg.get(key) || 0;
+		provPeriodAgg.set(key, cur + (entry.calls || 0));
+		const total = provTotalsMap.get(entry.provider) || 0;
+		provTotalsMap.set(entry.provider, total + (entry.calls || 0));
+	});
+
+	const sortedProvs = [...provTotalsMap.entries()].sort((a, b) => b[1] - a[1]);
+
+	const provDatasets = sortedProvs.map(([prov], i) => ({
+		label: prov,
+		data: periods.map((p) => provPeriodAgg.get(`${prov}|${p}`) || 0),
+		borderColor: chartColors[i % chartColors.length],
+		backgroundColor: chartColors[i % chartColors.length],
+		tension: 0.2,
+		pointRadius: 2,
+		fill: false,
+	}));
+
+	const provCanvas = document.getElementById('usage-chart-providers');
+	const provCtx = provCanvas.getContext('2d');
+	usageCharts.providers = new Chart(provCtx, {
+		type: 'line',
+		data: { labels: periods, datasets: provDatasets },
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: false,
+			plugins: {
+				legend: {
+					labels: { color: darkText, usePointStyle: true, padding: 16, font: { size: 10 } },
+				},
+				tooltip: {
+					callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toLocaleString()} calls` },
+				},
+			},
+			scales: {
+				x: {
+					ticks: { color: darkText, maxRotation: 45, font: { size: 10 } },
+					grid: { color: darkGrid },
+				},
+				y: {
+					ticks: { color: darkText, beginAtZero: true },
+					grid: { color: darkGrid },
+				},
+			},
+		},
+	});
+
+
+	// 汇总柱状图: Calls by Provider/Model (忽略 period)
+	const labels = aggregated.map((a) => a.model.length > 30 ? a.model.substring(0, 28) + '...' : a.model);
+	const providerLabels = aggregated.map((a) => a.provider);
+
 	const callsCanvas = document.getElementById('usage-chart-calls');
 	const callsCtx = callsCanvas.getContext('2d');
 	usageCharts.calls = new Chart(callsCtx, {
@@ -764,7 +993,7 @@ const loadUsage = async () => {
 		},
 	});
 
-	// Token 分组柱状图
+	// 汇总柱状图: Tokens by Provider/Model
 	const tokensCanvas = document.getElementById('usage-chart-tokens');
 	const tokensCtx = tokensCanvas.getContext('2d');
 	usageCharts.tokens = new Chart(tokensCtx, {
