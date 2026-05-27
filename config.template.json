@@ -1,8 +1,8 @@
 {
 	"server": {
-		"port": 8765,
+		"port": 8764,
 		"host": "127.0.0.1",
-		"adminPort": 8766
+		"adminPort": 8765
 	},
 	"defaultMaxTokens": 131072,
 	"providers": {
@@ -196,12 +196,14 @@
 		}
 	},
 	"agents": {
-		"default": "deepseek/deepseek-v4-pro",
-		"quick": "google/gemini-2.5-flash-preview",
-		"plan": "deepseek/deepseek-v4-pro",
-		"code": "deepseek/deepseek-v4-pro",
-		"writing": "deepseek/deepseek-v4-flash",
-		"research": "google/gemini-3.1-pro-preview"
+		"defaults": {
+			"default": "deepseek/deepseek-v4-pro",
+			"quick": "google/gemini-2.5-flash-preview",
+			"plan": "deepseek/deepseek-v4-pro",
+			"code": "deepseek/deepseek-v4-pro",
+			"writing": "deepseek/deepseek-v4-flash",
+			"research": "google/gemini-3.1-pro-preview"
+		}
 	},
 	"modelMapping": [
 		{

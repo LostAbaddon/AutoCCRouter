@@ -14,18 +14,11 @@ if (cmd === 'tui') {
 		...process.env,
 		ANTHROPIC_BASE_URL: 'http://127.0.0.1:8764',
 		ANTHROPIC_AUTH_TOKEN: 'cc2llm',
-		CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-		CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '1',
-		CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: '1',
-		CLAUDE_CODE_EFFORT_LEVEL: 'max',
-		CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
-		CLAUDE_YOLO: '1',
 	};
 
 	const args = [
 		'--dangerously-skip-permissions',
 		'--allow-dangerously-skip-permissions',
-		'--exclude-dynamic-system-prompt-sections',
 		'--settings', '{"includeGitInstructions":false}',
 	];
 

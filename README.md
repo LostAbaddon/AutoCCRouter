@@ -23,7 +23,9 @@ cd cc2llm
 cp config.template.json config.json
 # 编辑 config.json，填入各厂商 API Key
 
-npm start
+npm start          # 启动代理 + 管理面板
+npm start tui      # 启动代理后自动拉起 Claude Code TUI
+npm start wui      # 在浏览器打开管理面板
 ```
 
 - 代理服务：`http://127.0.0.1:8764`（Claude Code / Cowork 配置此地址）
@@ -135,13 +137,12 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 ```json
 "agents": {
   "defaults": {
-    "default":          "deepseek/deepseek-v4-flash",
-    "quick":            "google/gemini-3.5-flash",
-    "chatAndDailyJob":  "moonshot/kimi-k2.5",
-    "planMaking":       "google/gemini-3.1-pro-preview",
-    "code":             "deepseek/deepseek-v4-pro",
-    "writing":          "deepseek/deepseek-v4-pro",
-    "academicResearch": "google/gemini-3.1-pro-preview"
+    "default":   "deepseek/deepseek-v4-pro",
+    "quick":     "google/gemini-3.5-flash",
+    "plan":      ["deepseek/deepseek-v4-pro", "google/gemini-3.5-flash"],
+    "code":      "deepseek/deepseek-v4-pro",
+    "writing":   "deepseek/deepseek-v4-flash",
+    "research":  "google/gemini-3.1-pro-preview"
   },
   "fast": {
     "default":  "deepseek/deepseek-v4-flash",
@@ -155,10 +156,10 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 - 命名配置集 — 在 modelMapping 中设置 `target` 为配置集名称（如 `"fast"`）即可切换整套模式映射
 - `default` — 每个配置集内的兜底模式，分类器未命中时使用
 - `quick` — 分类器自身使用的轻量模型（用于快速判断话题）。支持 Anthropic / OpenAI / Gemini 三种协议的 Provider
-- 其余 key — 自定义工作模式，分类器根据对话内容自动匹配
-- **数值支持数组**：当某个 mode 的值为数组时，每次命中随机选取一个 spec，用于负载分散
+- 其余 key — 自定义工作模式（如 `plan` / `code` / `writing` / `research`），分类器根据对话内容自动匹配
+- **数组负载分散**：当某个 mode 的值为数组时，每次命中随机选取一个 spec，用于分散负载和故障切换
 
-分类提示词可在管理面板的 **Prompts** 标签页实时编辑，或直接修改 `prompts/classifier.md`。
+分类提示词可在管理面板的 **Prompts** 标签页实时编辑，或直接修改 `prompts/classifier.md`（分类 prompt）和 `prompts/classifier-system.md`（system prompt）。
 
 ### Auto Mode 高级特性
 
@@ -304,25 +305,28 @@ Anthropic 协议中，当 assistant 消息包含 tool_use 时，API 可能不返
 | DELETE | `/api/mappings/:index` | 删除 Mapping |
 | GET | `/api/prompts` | Prompt 列表 |
 | PUT | `/api/prompts/:name` | 更新 Prompt |
+| GET | `/api/models?provider=` | 从 Provider API 动态拉取模型列表（经过滤） |
 | GET | `/api/usage?from=&to=&unit=` | 用量统计查询 |
 
 ## 目录结构
 
 ```
 cc2llm/
-├── index.js                  # 入口，启动双端口服务
+├── index.js                  # 入口，启动双端口服务 + tui/wui 子命令
 ├── config.json               # 运行时配置（不提交）
 ├── config.template.json      # 配置模板
+├── model-filter.json         # 模型列表过滤规则（按 Provider 排除非 LLM 模型）
 ├── package.json
 ├── LICENSE
 ├── README.md
 ├── lib/
 │   ├── config.js             # 配置读写、maxTokens 三层解析、向后兼容迁移
 │   ├── logger.js             # 日志（debug/info/warn/error 四级过滤）
-│   ├── proxy-server.js       # 代理服务（:8765），模型映射与路由分发
+│   ├── proxy-server.js       # 代理服务（:8764），模型映射与路由分发
 │   ├── proxy-agent.js        # HTTP 代理（CONNECT 隧道，支持上级代理）
 │   ├── session-store.js      # Auto Mode 会话状态、Mode 缓存
 │   ├── classifier.js         # 话题分类器（Anthropic/OpenAI/Gemini 三协议适配）
+│   ├── model-fetcher.js      # 模型列表拉取（从 Provider API 动态获取并过滤）
 │   ├── prompt-store.js       # Prompt 文件管理（YAML frontmatter 解析）
 │   ├── thinking-store.js     # Thinking 块内存存储（按 tool_use_id 索引）
 │   ├── usage-tracker.js      # 用量记录与查询（按天分文件、聚合统计）
@@ -332,19 +336,34 @@ cc2llm/
 │   │   ├── gemini.js            # Gemini 协议处理与 Anthropic ↔ Gemini 互转
 │   │   └── auto.js              # 自动路由引擎（分类调度、config set 解析）
 │   └── admin/
-│       ├── index.js          # 管理服务（:8766），静态文件 + API 路由
+│       ├── index.js          # 管理服务（:8765），静态文件 + API 路由
 │       └── routes.js         # 管理 API 路由
 ├── frontend/
 │   ├── index.html            # 管理面板（7 个标签页）
 │   ├── app.js                # 面板逻辑（Chart.js 可视化）
 │   └── style.css             # 面板样式
 ├── prompts/
-│   └── classifier.md         # 话题分类提示词（YAML frontmatter + Markdown body）
+│   ├── classifier.md         # 话题分类提示词（YAML frontmatter + Markdown body）
+│   └── classifier-system.md  # 分类器 System Prompt
 ├── data/
 │   └── usage/                # 用量数据（YYYY-MM-DD.json）
 └── test/
     └── test.js
 ```
+
+## 模型列表与过滤
+
+管理面板的 Providers 标签页支持从 Provider API 动态拉取可用模型列表（`GET /api/models?provider=xxx`）。为过滤掉 embedding、TTS、图像生成等非 LLM 模型，`model-filter.json` 按 Provider 配置正则排除规则：
+
+```json
+{
+  "google": ["embedding", "\\bimagen\\b", "\\bveo\\b", "\\btts\\b", ...],
+  "openrouter": ["embedding", "-image\\b", "dall-e", "moderation", ...],
+  ...
+}
+```
+
+过滤规则按 Provider 名称匹配，正则大小写不敏感。不在此文件中的 Provider 不做过滤。
 
 ## 与 cc2deepseek 的关系
 
