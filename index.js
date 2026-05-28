@@ -9,7 +9,7 @@ const getConfig = () => global.cc2llmConfig;
 
 const cmd = process.argv[2];
 
-if (cmd === 'tui') {
+if (cmd === 'claude') {
 	const env = {
 		...process.env,
 		ANTHROPIC_BASE_URL: 'http://127.0.0.1:8764',
@@ -29,6 +29,50 @@ if (cmd === 'tui') {
 
 	child.on('error', (err) => {
 		log('error', `Failed to start Claude Code: ${err.message}`);
+		process.exit(1);
+	});
+
+	child.on('exit', (code) => {
+		process.exit(code || 0);
+	});
+}
+else if (cmd === 'codex') {
+	const env = {
+		...process.env,
+		OPENAI_BASE_URL: 'http://127.0.0.1:8764/codex',
+		OPENAI_API_KEY: 'cc2llm',
+	};
+
+	const child = spawn('codex', [], {
+		env,
+		stdio: 'inherit',
+	});
+
+	child.on('error', (err) => {
+		log('error', `Failed to start Codex CLI: ${err.message}`);
+		log('info', 'Make sure Codex CLI is installed: npm install -g @openai/codex');
+		process.exit(1);
+	});
+
+	child.on('exit', (code) => {
+		process.exit(code || 0);
+	});
+}
+else if (cmd === 'gemini') {
+	const env = {
+		...process.env,
+		GOOGLE_GEMINI_BASE_URL: 'http://127.0.0.1:8764',
+		GEMINI_API_KEY: 'cc2llm',
+	};
+
+	const child = spawn('gemini', [], {
+		env,
+		stdio: 'inherit',
+	});
+
+	child.on('error', (err) => {
+		log('error', `Failed to start Gemini CLI: ${err.message}`);
+		log('info', 'Make sure Gemini CLI is installed: npm install -g @google/gemini-cli');
 		process.exit(1);
 	});
 

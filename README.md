@@ -1,12 +1,13 @@
 # CC2LLM
 
 > - AUTHOR: [LostAbaddon](lostabaddon@gmail.com)
-> - VERSION: 1.2.0
+> - VERSION: 2.0.0
 
-将 Claude Cowork / Claude Code 请求透明转发到多厂商 LLM 的桥接代理，支持自动话题分类、智能路由和 Web 管理面板。
+将 Claude Code / Claude Cowork / Codex CLI / Codex App / Gemini CLI 请求透明转发到多厂商 LLM 的桥接代理，支持自动话题分类、智能路由和 Web 管理面板。
 
 ## 功能
 
+- **多客户端支持** — Claude Code、Claude Cowork、Codex CLI、Codex App、Gemini CLI 均可通过同一代理端口接入，各自使用原生协议（Anthropic / OpenAI / Gemini）
 - **多厂商支持** — Anthropic、OpenAI、Gemini 三种协议兼容，覆盖 DeepSeek / Google / Moonshot / MiniMax / OpenRouter 等十余家厂商
 - **自动模式（Auto Mode）** — 内置话题分类器，根据对话内容自动匹配最佳工作模式（编程 / 写作 / 研究 / 规划等），无需手动切换模型
 - **跨协议转换** — Anthropic ↔ OpenAI ↔ Gemini 请求/响应格式自动互转，保留 streaming、tool use、thinking 等高级特性
@@ -24,25 +25,28 @@ cp config.template.json config.json
 # 编辑 config.json，填入各厂商 API Key
 
 npm start          # 启动代理 + 管理面板
-npm start tui      # 启动代理后自动拉起 Claude Code TUI
+npm start claude   # 启动代理后自动拉起 Claude Code TUI
+npm start codex    # 启动代理后自动拉起 Codex CLI
+npm start gemini   # 启动代理后自动拉起 Gemini CLI
 npm start wui      # 在浏览器打开管理面板
 ```
 
-- 代理服务：`http://127.0.0.1:8764`（Claude Code / Cowork 配置此地址）
+- 代理服务：`http://127.0.0.1:8764`（各客户端配置此地址）
 - 管理面板：`http://127.0.0.1:8765`
+
+## 客户端接入
+
+cc2llm 的代理端口（默认 `:8764`）同时接受三种原生 API 协议，根据 URL 路径自动识别客户端类型：
+
+| 客户端 | 原生协议 | 关键 URL 路径 |
+|--------|---------|-------------|
+| Claude Code / Cowork | Anthropic Messages API | `/v1/messages` |
+| Codex CLI / Codex App | OpenAI Chat Completions API | `/v1/chat/completions` |
+| Gemini CLI | Google Gemini API | `/v1beta/models/{model}:generateContent` |
 
 ### Claude Code 接入
 
-在 Claude Code 设置中将 API Base URL 指向 cc2llm：
-
-```json
-{
-  "apiBaseUrl": "http://127.0.0.1:8764",
-  "apiKey": "any-value"
-}
-```
-
-或使用如下命令行命令：
+**方式一：环境变量 + CLI 参数（推荐）**
 
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8764
@@ -53,8 +57,344 @@ export CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
 export CLAUDE_CODE_EFFORT_LEVEL=max
 export CLAUDE_CODE_ATTRIBUTION_HEADER=0
 export CLAUDE_YOLO=1
-claude --dangerously-skip-permissions --allow-dangerously-skip-permissions --exclude-dynamic-system-prompt-sections --settings '{"includeGitInstructions":false}'
+claude --dangerously-skip-permissions --allow-dangerously-skip-permissions \
+  --exclude-dynamic-system-prompt-sections \
+  --settings '{"includeGitInstructions":false}'
 ```
+
+**方式二：Claude Code 设置文件**
+
+在 Claude Code 设置中将 API Base URL 指向 cc2llm：
+
+```json
+{
+  "apiBaseUrl": "http://127.0.0.1:8764",
+  "apiKey": "any-value"
+}
+```
+
+**方式三：一键启动**
+
+```bash
+npm start claude
+```
+
+该命令自动设置环境变量并启动 Claude Code。
+
+### Claude Cowork 接入
+
+与 Claude Code 接入方式相同，Cowork 基于同一 Anthropic 协议：
+
+```bash
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8764
+export ANTHROPIC_AUTH_TOKEN=cc2llm
+
+claude-cowork
+```
+
+或将 cc2llm 的配置填入 Cowork 的 API 设置中。
+
+### Codex CLI 接入
+
+Codex CLI 使用 OpenAI Chat Completions API 协议，cc2llm 在代理端口自动识别并处理。
+
+#### 安装 Codex CLI
+
+```bash
+# npm 全局安装
+npm install -g @openai/codex
+
+# 或 Homebrew (macOS)
+brew install --cask codex
+```
+
+#### 配置方式
+
+**方式一：一键启动（最简单）**
+
+```bash
+npm start codex
+```
+
+该命令自动设置环境变量并启动 Codex CLI。
+
+**方式二：环境变量**
+
+```bash
+export OPENAI_BASE_URL=http://127.0.0.1:8764/codex
+export OPENAI_API_KEY=cc2llm
+
+codex
+```
+
+> `OPENAI_BASE_URL` 末尾**必须带 `/codex`**，这是 Codex CLI 的要求，与 Claude Code 不同。
+
+**方式三：配置文件（推荐持久化）**
+
+创建 `~/.codex/config.toml`：
+
+```toml
+# ~/.codex/config.toml
+model           = "gpt-5.4"
+model_provider  = "cc2llm"
+openai_base_url = "http://127.0.0.1:8764/codex"
+
+[model_providers.cc2llm]
+name     = "CC2LLM Bridge"
+base_url = "http://127.0.0.1:8764/codex"
+wire_api = "chat"
+env_key  = "OPENAI_API_KEY"
+```
+
+配合环境变量：
+
+```bash
+export OPENAI_API_KEY=cc2llm
+codex
+```
+
+> **关于 `wire_api`**：Codex CLI 0.81.0+ 默认使用 `"responses"`（Responses API），但大多数中转服务只支持 Chat Completions API。如果你的后端 Provider 只支持 Chat，请设置 `wire_api = "chat"`。
+
+#### Model Mapping 配置
+
+Codex CLI 发送的模型名是 OpenAI 风格（如 `gpt-5.4`、`gpt-5`、`codex-4`、`o4-mini`、`o3`），需要在 cc2llm 的 `modelMapping` 中添加对应映射：
+
+```json
+{
+  "prefix": "gpt-5.4",
+  "provider": "deepseek",
+  "target": "deepseek-v4-pro"
+},
+{
+  "prefix": "gpt-5",
+  "provider": "deepseek",
+  "target": "deepseek-v4-pro"
+},
+{
+  "prefix": "codex",
+  "provider": "deepseek",
+  "target": "deepseek-v4-pro"
+},
+{
+  "prefix": "o4",
+  "provider": "deepseek",
+  "target": "deepseek-v4-pro"
+},
+{
+  "prefix": "o3",
+  "provider": "deepseek",
+  "target": "deepseek-v4-pro"
+}
+```
+
+> 映射规则：按 `prefix` 长度降序匹配，`gpt-5.4` 会优先命中 `gpt-5.4` 前缀而非 `gpt-5`。
+
+#### 验证配置
+
+```bash
+# 确认版本
+codex --version
+
+# 确认环境变量
+echo $OPENAI_BASE_URL
+echo $OPENAI_API_KEY
+
+# 运行诊断（部分版本支持）
+codex doctor
+```
+
+### Codex App（桌面版）接入
+
+Codex 桌面版与 CLI 共用 `~/.codex/config.toml`，但额外需要一个**模型目录文件**来让桌面版识别自定义模型。
+
+#### 第一步：创建模型目录文件
+
+创建 `~/.codex/model-catalogs/all-models.json`：
+
+```json
+{
+  "models": [
+    {
+      "slug": "deepseek-v4-pro",
+      "display_name": "DeepSeek V4 Pro (via CC2LLM)",
+      "description": "Routed through CC2LLM bridge proxy",
+      "visibility": "list",
+      "supported_in_api": true,
+      "context_window": 131072,
+      "max_context_window": 131072,
+      "effective_context_window_percent": 95,
+      "auto_compact_token_limit": 196608,
+      "input_modalities": ["text", "image"],
+      "supports_image_detail_original": true,
+      "supports_parallel_tool_calls": true,
+      "supports_search_tool": false,
+      "web_search_tool_type": "text_and_image",
+      "apply_patch_tool_type": "freeform",
+      "shell_type": "shell_command",
+      "supports_reasoning_summaries": true,
+      "default_reasoning_summary": "auto",
+      "default_reasoning_level": "medium",
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "truncation_policy": { "mode": "tokens", "limit": 10000 },
+      "priority": 10
+    }
+  ]
+}
+```
+
+#### 第二步：配置 config.toml
+
+`~/.codex/config.toml`：
+
+```toml
+# 模型目录文件（必须写在根级别）
+model_catalog_json = "~/.codex/model-catalogs/all-models.json"
+
+model           = "deepseek-v4-pro"
+model_provider  = "cc2llm"
+openai_base_url = "http://127.0.0.1:8764/codex"
+
+[model_providers.cc2llm]
+name     = "CC2LLM Bridge"
+base_url = "http://127.0.0.1:8764/codex"
+wire_api = "chat"
+env_key  = "OPENAI_API_KEY"
+```
+
+#### 第三步：设置环境变量并启动
+
+```bash
+export OPENAI_API_KEY=cc2llm
+# 启动 Codex 桌面应用
+```
+
+> `model_catalog_json` 必须写在 `config.toml` **根级别**，不能放在 provider 配置段内。Provider ID（如 `cc2llm`）不能使用系统保留名（`openai`、`ollama`、`lmstudio` 等）。
+
+### Gemini CLI 接入
+
+Gemini CLI 使用 Google Gemini 原生 API 协议，cc2llm 在代理端口自动识别并处理。
+
+#### 安装 Gemini CLI
+
+```bash
+npm install -g @google/gemini-cli
+```
+
+#### 配置方式
+
+**方式一：一键启动（最简单）**
+
+```bash
+npm start gemini
+```
+
+该命令自动设置环境变量并启动 Gemini CLI。
+
+**方式二：环境变量**
+
+```bash
+export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8764
+export GEMINI_API_KEY=cc2llm
+
+gemini
+```
+
+> `GOOGLE_GEMINI_BASE_URL` 末尾**无需**带路径前缀，Gemini CLI 会自动追加 `/v1beta/models/...`。
+
+**方式三：配置文件**
+
+创建 `~/.gemini/settings.json`：
+
+```json
+{
+  "security": {
+    "auth": {
+      "selectedType": "gemini-api-key"
+    }
+  }
+}
+```
+
+配合环境变量启动。
+
+#### Model Mapping 配置
+
+Gemini CLI 发送的模型名是 Google 风格（如 `gemini-2.5-pro`、`gemini-2.5-flash`、`gemini-3-pro-preview`），需要在 cc2llm 的 `modelMapping` 中添加对应映射：
+
+```json
+{
+  "prefix": "gemini-2.5",
+  "provider": "google",
+  "target": "gemini-3.1-flash-lite-preview"
+},
+{
+  "prefix": "gemini-3",
+  "provider": "google",
+  "target": "gemini-3.1-pro-preview"
+}
+```
+
+也可以将 Gemini CLI 的请求路由到非 Gemini 的后端（如 DeepSeek），cc2llm 会自动做 Gemini ↔ Anthropic 协议转换：
+
+```json
+{
+  "prefix": "gemini-2.5",
+  "provider": "deepseek",
+  "target": "deepseek-v4-pro"
+}
+```
+
+#### 常见注意事项
+
+1. **OAuth 缓存冲突**：如果之前用 Google 账号登录过 Gemini CLI，OAuth 缓存可能导致 `GOOGLE_GEMINI_BASE_URL` 被忽略。建议清除缓存后重新配置，或者使用 API Key 认证模式。
+2. **Docker 沙箱**：Gemini CLI 启用 `sandbox: true` 后，`GOOGLE_*_BASE_URL` 环境变量不会传递到沙箱内部，仅有 `GEMINI_API_KEY` 被保留。使用 cc2llm 时建议关闭沙箱或使用其他隔离方式。
+3. **API Key 作为 Query 参数**：Gemini CLI 默认将 API Key 放在 URL Query String（`?key=...`）中传递，cc2llm 会自动处理。
+
+### 多客户端同时使用
+
+cc2llm 支持多个不同协议的客户端同时连接到同一代理端口：
+
+```bash
+# 终端 1: 启动代理
+npm start
+
+# 终端 2: 启动 Claude Code
+npm start claude
+
+# 终端 3: 启动 Codex CLI
+npm start codex
+
+# 终端 4: 启动 Gemini CLI
+npm start gemini
+```
+
+所有客户端共享同一套 Provider 配置、Model Mapping 和 Auto Mode 设置，管理面板统一管理。
+
+### 模型名映射总结
+
+cc2llm 使用统一的 `modelMapping` 前缀匹配机制处理所有客户端的模型名。以下是一个覆盖三种客户端的完整示例：
+
+```json
+"modelMapping": [
+  { "prefix": "claude-opus",  "target": "deepseek-v4-pro",             "provider": "deepseek" },
+  { "prefix": "claude-sonnet", "target": "deepseek-v4-pro",             "provider": "auto" },
+  { "prefix": "claude-haiku",  "target": "deepseek-v4-flash",           "provider": "deepseek" },
+  { "prefix": "gpt-5.4",      "target": "deepseek-v4-pro",             "provider": "deepseek" },
+  { "prefix": "gpt-5",        "target": "deepseek-v4-pro",             "provider": "deepseek" },
+  { "prefix": "codex",        "target": "deepseek-v4-pro",             "provider": "deepseek" },
+  { "prefix": "o4",           "target": "deepseek-v4-pro",             "provider": "deepseek" },
+  { "prefix": "o3",           "target": "deepseek-v4-pro",             "provider": "deepseek" },
+  { "prefix": "gemini-2.5",   "target": "gemini-3.1-flash-lite-preview", "provider": "google" },
+  { "prefix": "gemini-3",     "target": "gemini-3.1-pro-preview",       "provider": "google" }
+]
+```
+
+前缀匹配规则：
+- 按 `prefix` 长度降序排列，优先命中更具体的前缀
+- `gpt-5.4` → 优先命中 `gpt-5.4`（长度 6），而非 `gpt-5`（长度 5）
+- `gemini-2.5-flash` → 命中 `gemini-2.5` 前缀
+- 空字符串 `prefix` 作为兜底匹配，通常无需设置
 
 ## 配置
 
@@ -107,22 +447,22 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 
 ### Model Mapping（模型名映射）
 
-将 Claude 模型名按前缀匹配路由到目标厂商：
+将客户端传入的模型名按前缀匹配路由到目标厂商：
 
 ```json
 "modelMapping": [
   { "prefix": "claude-opus",  "target": "deepseek-v4-pro",  "provider": "deepseek" },
-  { "prefix": "claude-sonnet", "target": "deepseek-v4-pro",  "provider": "deepseek" },
-  { "prefix": "claude-haiku",  "target": "deepseek-v4-flash", "provider": "deepseek" },
-  { "prefix": "auto",          "target": "auto",             "provider": "auto" }
+  { "prefix": "gpt-5.4",      "target": "deepseek-v4-pro",  "provider": "deepseek" },
+  { "prefix": "gemini-2.5",   "target": "gemini-2.5-pro",   "provider": "google" },
+  { "prefix": "auto",         "target": "auto",             "provider": "auto" }
 ]
 ```
 
 匹配规则：
 - 按 `prefix` 长度降序排列，优先命中更具体的前缀
 - `claude-opus-4-7-20250805` → `deepseek-v4-pro`（前缀 `claude-opus` 命中第一条）
-- 空字符串 `prefix` 作为兜底匹配（所有模型名都包含空前缀），通常放在数组末尾，也可以不设置
-- 未匹配任何前缀 → 原样透传
+- 空字符串 `prefix` 作为兜底匹配
+- 未匹配任何前缀 → 返回 400 错误
 
 ### Auto Mode / Agents（智能路由）
 
@@ -157,16 +497,16 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 - `default` — 每个配置集内的兜底模式，分类器未命中时使用
 - `quick` — 分类器自身使用的轻量模型（用于快速判断话题）。支持 Anthropic / OpenAI / Gemini 三种协议的 Provider
 - 其余 key — 自定义工作模式（如 `plan` / `code` / `writing` / `research`），分类器根据对话内容自动匹配
-- **数组负载分散**：当某个 mode 的值为数组时，每次命中随机选取一个 spec，用于分散负载和故障切换
+- **数组负载分散**：当某个 mode 的值为数组时，每次命中随机选取一个 spec
 
 分类提示词可在管理面板的 **Prompts** 标签页实时编辑，或直接修改 `prompts/classifier.md`（分类 prompt）和 `prompts/classifier-system.md`（system prompt）。
 
 ### Auto Mode 高级特性
 
 - **Session 持久化** — 每个会话维护当前工作模式，非文本输入（tool call 结果等）自动延续当前 mode 不触发重新分类
-- **Mode 缓存** — `modeCacheTtl` 秒内同一 session 的分类结果被缓存复用，减少延迟和成本
-- **分类器多协议** — quick 模型可以是 Anthropic/OpenAI/Gemini 任一协议的 Provider，分类器自动适配请求格式
-- **对话裁剪** — `conversationGroups` 控制送入分类器的最近对话组数，仅保留纯文本消息，去除 tool call 和 tool result
+- **Mode 缓存** — `modeCacheTtl` 秒内同一 session 的分类结果被缓存复用
+- **分类器多协议** — quick 模型可以是 Anthropic/OpenAI/Gemini 任一协议的 Provider
+- **对话裁剪** — `conversationGroups` 控制送入分类器的最近对话组数
 
 ## 管理面板
 
@@ -176,8 +516,8 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 |--------|------|
 | Dashboard | 服务状态、运行时长、内存占用、在线 Provider、Mappings 概览 |
 | Providers | 增删改查模型厂商，配置 API Key/Base URL/代理 |
-| Model Mappings | 管理 Claude → 目标模型的映射规则 |
-| Agents | 管理 Config Set 和 Working Mode → Provider/Model 的对应关系，设置 Mode Cache TTL 和对话裁剪参数 |
+| Model Mappings | 管理模型名 → Provider/Model 的映射规则 |
+| Agents | 管理 Config Set 和 Working Mode 对应关系 |
 | Prompts | 编辑话题分类提示词（即时生效，无需重启） |
 | Usage | 按天/周/月/年查看各 Provider/Model 调用量和 Token 消耗图表 |
 | Raw Config | 直接编辑完整 `config.json` |
@@ -186,7 +526,7 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 
 ## 用量追踪
 
-cc2llm 自动记录每次 API 调用的 Token 消耗，数据存储在 `data/usage/` 目录下，按日期分文件（`YYYY-MM-DD.json`）。记录内容包括：
+每次 API 调用的 Token 消耗自动记录，存储在 `data/usage/` 目录下，按日期分文件（`YYYY-MM-DD.json`）。记录内容包括：
 
 - 每个 Provider/Model 的调用次数
 - 输入/输出/缓存 Token 数量
@@ -197,97 +537,74 @@ cc2llm 自动记录每次 API 调用的 Token 消耗，数据存储在 `data/usa
 ## 架构
 
 ```
-Claude Code / Cowork
-        │
-        ▼
-┌──────────────┐     ┌──────────────┐
-│  Proxy Port  │     │  Admin Port  │
-│   :8764      │     │   :8765      │
-└──────┬───────┘     └──────┬───────┘
-       │                    │
-       ▼                    ▼
-┌──────────────┐     ┌──────────────┐
-│  Model Map   │     │  Web Panel   │
-│  + Route     │     │  + REST API  │
-└──────┬───────┘     └──────┬───────┘
-       │                    │
-       ▼                    ▼
-┌──────────────────────────────────┐
-│           config.json            │
-│  providers / agents / mappings   │
-└──────────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│        Provider Handlers         │
-│  anthropic / openai / gemini     │
-│            auto                  │
-└──────┬───────────────────────────┘
-       │              │
-       ▼              ▼
-┌──────────────┐  ┌─────────────────┐
-│  Usage       │  │  Thinking       │
-│  Tracker     │  │  Store          │
-│  (data/usage)│  │  (in-memory)    │
-└──────────────┘  └─────────────────┘
-       │
-       ▼
-   Upstream APIs
+  Claude Code    Codex CLI    Gemini CLI
+  (Anthropic)    (OpenAI)     (Gemini)
+       │             │            │
+       └─────────────┼────────────┘
+                     │
+                     ▼
+             ┌──────────────┐     ┌──────────────┐
+             │  Proxy Port  │     │  Admin Port  │
+             │   :8764      │     │   :8765      │
+             │  多协议识别  │     │              │
+             └──────┬───────┘     └──────┬───────┘
+                    │                    │
+                    ▼                    ▼
+             ┌──────────────┐     ┌──────────────┐
+             │  Model Map   │     │  Web Panel   │
+             │  + Route     │     │  + REST API  │
+             └──────┬───────┘     └──────┬───────┘
+                    │                    │
+                    ▼                    ▼
+             ┌──────────────────────────────────┐
+             │           config.json            │
+             │  providers / agents / mappings   │
+             └──────────────────────────────────┘
+                    │
+                    ▼
+             ┌──────────────────────────────────┐
+             │        Provider Handlers         │
+             │  anthropic / openai / gemini     │
+             │  openai-native / gemini-native   │
+             │            auto                  │
+             └──────┬───────────────────────────┘
+                    │              │
+                    ▼              ▼
+             ┌──────────────┐  ┌─────────────────┐
+             │  Usage       │  │  Thinking       │
+             │  Tracker     │  │  Store          │
+             │  (data/usage)│  │  (in-memory)    │
+             └──────────────┘  └─────────────────┘
+                    │
+                    ▼
+                Upstream APIs
 ```
 
-### Auto Mode 流程
+### 多协议请求流
 
 ```
-用户消息 → 是否为文本输入？
-              │
-     ┌───────┴───────┐
-     │ YES           │ NO
-     ▼               ▼
-  Mode 缓存命中?   保持当前 Mode
-  │    │               │
-  ├ YES → 复用缓存 Mode
-  │
-  └ NO ↓
-  话题分类器(quick model)
-     │
-     ▼
-  结果解析
-  │    │
-  ├ 新话题 + mode → 切换到对应 Agent
-  ├ 新话题 - mode → 使用 default
-  └ 非新话题 ──────→ 保持当前 Mode
-        │
-        ▼
-  setSession(sessionKey, mode)
-  recordModeActivation(mode)
-        │
-        ▼
-  resolveAgent(mode, configSet)
-    → provider + model
-        │
-        ▼
-  转发到上游 API
-  recordUsage(provider, model, tokens)
+请求到达 :8764
+      │
+      ▼
+  URL 路径检测
+  ├── /v1/chat/completions | /responses ──→ openai-native handler ──→ 转换 → 路由 → 响应
+  ├── /v1beta/models/*:generateContent ──→ gemini-native handler ──→ 转换 → 路由 → 响应
+  └── /v1/messages ──→ Anthropic handler ──→ 路由 → 响应
 ```
-
-### Thinking 块持久化
-
-Anthropic 协议中，当 assistant 消息包含 tool_use 时，API 可能不返回对应的 thinking 块。cc2llm 自动在响应流中捕获 thinking 块并存入内存（按 `tool_use_id` 索引），在下次请求时从请求体中检测缺失的 thinking 块并补回，确保 Claude Code 正确处理 tool use 相关的思考链。
-
-### Cache Control 注入
-
-对于 Anthropic 协议的 Provider，cc2llm 自动为请求中的 system prompt 和最后一条 user 消息的尾部 content block 注入 `cache_control: { type: "ephemeral" }` 标记，使上游支持 prompt caching 的 API 能正确识别断点。
 
 ## API
 
 ### 代理端口（默认 8764）
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/` `/health` | 健康检查（含 Provider 列表和 Mappings 数量） |
-| GET | `/v1/models` | 模型列表（从 modelMapping 生成） |
-| POST | `/v1/messages` | 消息接口（Anthropic 格式），自动映射模型并路由 |
-| OPTIONS | `*` | CORS 预检 |
+| 方法 | 路径 | 客户端 | 说明 |
+|------|------|--------|------|
+| GET | `/` `/health` | 通用 | 健康检查（含 Provider 列表和 Mappings 数量） |
+| GET | `/v1/models` `/codex/models` | 通用 | 模型列表（从 modelMapping 生成，Codex CLI 用 `/codex/models`） |
+| POST | `/v1/messages` | Claude Code/Cowork | 消息接口（Anthropic 格式），自动映射并路由 |
+| POST | `/v1/chat/completions` `/responses` | Codex CLI/App | 消息接口（OpenAI 格式，含新版 Responses API），自动映射并路由 |
+| POST | `/v1beta/models/{model}:generateContent` | Gemini CLI | 消息接口（Gemini 格式），自动映射并路由 |
+| POST | `/v1beta/models/{model}:streamGenerateContent` | Gemini CLI | 流式接口（Gemini 格式） |
+| OPTIONS | `*` | 通用 | CORS 预检 |
 
 ### 管理端口（默认 8765）
 
@@ -305,45 +622,49 @@ Anthropic 协议中，当 assistant 消息包含 tool_use 时，API 可能不返
 | DELETE | `/api/mappings/:index` | 删除 Mapping |
 | GET | `/api/prompts` | Prompt 列表 |
 | PUT | `/api/prompts/:name` | 更新 Prompt |
-| GET | `/api/models?provider=` | 从 Provider API 动态拉取模型列表（经过滤） |
+| GET | `/api/models` | 从所有 Provider API 动态拉取模型列表（经过滤），按 Provider 分组返回 |
 | GET | `/api/usage?from=&to=&unit=` | 用量统计查询 |
 
 ## 目录结构
 
 ```
 cc2llm/
-├── index.js                  # 入口，启动双端口服务 + tui/wui 子命令
+├── index.js                  # 入口，启动双端口服务 + claude/codex/gemini/wui 子命令
 ├── config.json               # 运行时配置（不提交）
 ├── config.template.json      # 配置模板
-├── model-filter.json         # 模型列表过滤规则（按 Provider 排除非 LLM 模型）
+├── model-filter.json         # 模型列表过滤规则
 ├── package.json
 ├── LICENSE
 ├── README.md
 ├── lib/
 │   ├── config.js             # 配置读写、maxTokens 三层解析、向后兼容迁移
 │   ├── logger.js             # 日志（debug/info/warn/error 四级过滤）
-│   ├── proxy-server.js       # 代理服务（:8764），模型映射与路由分发
+│   ├── model-mapper.js       # 模型名前缀匹配映射
+│   ├── proxy-server.js       # 代理服务（:8764），多协议识别与路由分发
 │   ├── proxy-agent.js        # HTTP 代理（CONNECT 隧道，支持上级代理）
 │   ├── session-store.js      # Auto Mode 会话状态、Mode 缓存
-│   ├── classifier.js         # 话题分类器（Anthropic/OpenAI/Gemini 三协议适配）
-│   ├── model-fetcher.js      # 模型列表拉取（从 Provider API 动态获取并过滤）
-│   ├── prompt-store.js       # Prompt 文件管理（YAML frontmatter 解析）
-│   ├── thinking-store.js     # Thinking 块内存存储（按 tool_use_id 索引）
-│   ├── usage-tracker.js      # 用量记录与查询（按天分文件、聚合统计）
+│   ├── classifier.js         # 话题分类器（三协议适配）
+│   ├── model-fetcher.js      # 模型列表拉取
+│   ├── prompt-store.js       # Prompt 文件管理
+│   ├── thinking-store.js     # Thinking 块内存存储
+│   ├── usage-tracker.js      # 用量记录与查询
 │   ├── providers/
-│   │   ├── anthropic-compat.js  # Anthropic 协议处理（thinking 恢复、cache_control 注入）
+│   │   ├── anthropic-compat.js  # Anthropic 协议处理
 │   │   ├── openai-compat.js     # OpenAI 协议处理与 Anthropic ↔ OpenAI 互转
 │   │   ├── gemini.js            # Gemini 协议处理与 Anthropic ↔ Gemini 互转
-│   │   └── auto.js              # 自动路由引擎（分类调度、config set 解析）
+│   │   └── auto.js              # 自动路由引擎
+│   ├── handlers/
+│   │   ├── openai-native.js     # OpenAI 原生请求处理器（Codex CLI/App 客户端）
+│   │   └── gemini-native.js     # Gemini 原生请求处理器（Gemini CLI 客户端）
 │   └── admin/
-│       ├── index.js          # 管理服务（:8765），静态文件 + API 路由
+│       ├── index.js          # 管理服务（:8765）
 │       └── routes.js         # 管理 API 路由
 ├── frontend/
 │   ├── index.html            # 管理面板（7 个标签页）
 │   ├── app.js                # 面板逻辑（Chart.js 可视化）
 │   └── style.css             # 面板样式
 ├── prompts/
-│   ├── classifier.md         # 话题分类提示词（YAML frontmatter + Markdown body）
+│   ├── classifier.md         # 话题分类提示词
 │   └── classifier-system.md  # 分类器 System Prompt
 ├── data/
 │   └── usage/                # 用量数据（YYYY-MM-DD.json）
@@ -359,7 +680,11 @@ cc2llm/
 {
   "google": ["embedding", "\\bimagen\\b", "\\bveo\\b", "\\btts\\b", ...],
   "openrouter": ["embedding", "-image\\b", "dall-e", "moderation", ...],
-  ...
+  "openai": ["embedding", "\\btts\\b", "\\bwhisper\\b", "dall-e", "moderation", ...],
+  "xai": ["imagine", "\\btts\\b", "\\bstt\\b", "\\bvoice\\b"],
+  "deepseek": ["\\bjanus\\b"],
+  "moonshot": ["kimi-audio", "\\baudio\\b"],
+  "minimax": ["\\bspeech\\b", "image-01", "hailuo"]
 }
 ```
 
@@ -372,7 +697,8 @@ cc2llm 是 cc2deepseek 的演进版本，从"单厂商一对一转发"升级为"
 | 维度 | cc2deepseek | cc2llm |
 |------|------------|--------|
 | 厂商数 | 1（DeepSeek） | 无限制 |
-| 协议 | Anthropic 透传 | 三种协议互转 |
+| 客户端 | Claude Code | Claude Code/Cowork + Codex CLI/App + Gemini CLI |
+| 协议 | Anthropic 透传 | 三种协议互转 + 原生协议接入 |
 | 路由 | 固定前缀映射 | 固定映射 + AI 话题分类 |
 | 管理 | 无 | Web 管理面板 |
 | Prompt | 硬编码 | 文件化管理 + 在线编辑 |

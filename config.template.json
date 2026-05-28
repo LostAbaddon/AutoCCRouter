@@ -227,6 +227,41 @@
 			"provider": "deepseek"
 		},
 		{
+			"prefix": "gpt-5.4",
+			"target": "deepseek-v4-pro",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "gpt-5",
+			"target": "deepseek-v4-pro",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "codex",
+			"target": "deepseek-v4-pro",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "o4",
+			"target": "deepseek-v4-pro",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "o3",
+			"target": "deepseek-v4-pro",
+			"provider": "deepseek"
+		},
+		{
+			"prefix": "gemini-2.5",
+			"target": "gemini-2.5-pro",
+			"provider": "gemini"
+		},
+		{
+			"prefix": "gemini-3",
+			"target": "gemini-3-pro-preview",
+			"provider": "gemini"
+		},
+		{
 			"prefix": "",
 			"target": "",
 			"provider": "deepseek"
