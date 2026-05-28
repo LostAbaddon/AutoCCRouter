@@ -663,6 +663,7 @@ const loadUsage = async () => {
 	destroyUsageCharts();
 
 	if (!data || !Array.isArray(data.entries) || data.entries.length === 0) {
+		document.getElementById('usage-chart-copilot').parentElement.parentElement.style.display = '';
 		document.getElementById('usage-chart-overall').parentElement.parentElement.style.display = '';
 		document.getElementById('usage-chart-models').parentElement.parentElement.style.display = '';
 		document.getElementById('usage-chart-providers').parentElement.parentElement.style.display = '';
@@ -698,26 +699,43 @@ const loadUsage = async () => {
 
 	const aggregated = [...aggMap.values()].sort((a, b) => b.calls - a.calls);
 
+	
 	let totalModeActivations = 0;
 	if (data.modes) {
 		data.modes.forEach((m) => { totalModeActivations += m.activations || 0; });
 	}
+
+	const clientCounts = { claudecode: 0, codex: 0, gemini: 0 };
+	data.entries.forEach(e => {
+		const src = e.clientSource || 'claudecode';
+		if (clientCounts[src] !== undefined) clientCounts[src] += e.calls || 0;
+		else clientCounts[src] = e.calls || 0;
+	});
 
 	// 摘要卡片
 	if (summary) {
 		const modeCard = totalModeActivations > 0
 			? `<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Mode Switches</div><div class="big-number">${totalModeActivations.toLocaleString()}</div></div>`
 			: '';
+		const copilotCards = `
+				<div class="card" style="flex:1;min-width:120px;text-align:center;border-top:3px solid #d2a8ff"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">ClaudeCode Calls</div><div class="big-number" style="font-size:20px">${clientCounts.claudecode.toLocaleString()}</div></div>
+				<div class="card" style="flex:1;min-width:120px;text-align:center;border-top:3px solid #58a6ff"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Codex Calls</div><div class="big-number" style="font-size:20px">${clientCounts.codex.toLocaleString()}</div></div>
+				<div class="card" style="flex:1;min-width:120px;text-align:center;border-top:3px solid #3fb950"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Gemini Calls</div><div class="big-number" style="font-size:20px">${clientCounts.gemini.toLocaleString()}</div></div>
+		`;
 		summary.innerHTML = `
 			<div style="display:flex;gap:16px;flex-wrap:wrap">
-				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Calls</div><div class="big-number">${totalCalls.toLocaleString()}</div></div>
+				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Total Calls</div><div class="big-number">${totalCalls.toLocaleString()}</div></div>
 				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Input</div><div class="big-number">${formatTokens(totalInput)}</div></div>
 				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Output</div><div class="big-number">${formatTokens(totalOutput)}</div></div>
 				<div class="card" style="flex:1;min-width:120px;text-align:center"><div style="font-size:11px;color:#8b949e;text-transform:uppercase">Cache</div><div class="big-number">${formatTokens(totalCache)}</div></div>
 				${modeCard}
 			</div>
+			<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:16px">
+				${copilotCards}
+			</div>
 		`;
 	}
+
 
 	// 按 period 聚合 (用于折线图)
 	const periodAgg = new Map();
@@ -745,7 +763,76 @@ const loadUsage = async () => {
 	const darkGrid = '#21262d';
 	const darkText = '#8b949e';
 
+
+	// --- 折线图: Copilot 使用量 (Calls by Client Source) ---
+	const clientAgg = new Map();
+	data.entries.forEach((entry) => {
+		const source = entry.clientSource || 'claudecode';
+		const period = entry.period;
+		if (!clientAgg.has(source)) clientAgg.set(source, new Map());
+		const srcMap = clientAgg.get(source);
+		const p = srcMap.get(period) || { calls: 0, inputTokens: 0, outputTokens: 0 };
+		p.calls += entry.calls || 0;
+		srcMap.set(period, p);
+	});
+
+	const clientSources = [...clientAgg.keys()].sort();
+	const copilotColors = {
+		'claudecode': '#d2a8ff', // purple
+		'codex': '#58a6ff',      // blue
+		'gemini': '#3fb950'      // green
+	};
+	const copilotDatasets = clientSources.map((source, i) => {
+		const srcMap = clientAgg.get(source);
+		const dataPoints = periods.map(p => srcMap.get(p)?.calls || 0);
+		return {
+			label: source.toUpperCase() + ' Calls',
+			data: dataPoints,
+			borderColor: copilotColors[source] || chartColors[i % chartColors.length],
+			backgroundColor: 'transparent',
+			borderWidth: 2,
+			tension: 0.1,
+			pointRadius: 3
+		};
+	});
+
+	const copilotCanvas = document.getElementById('usage-chart-copilot');
+	const copilotCtx = copilotCanvas.getContext('2d');
+	usageCharts.copilot = new Chart(copilotCtx, {
+		type: 'line',
+		data: {
+			labels: periods,
+			datasets: copilotDatasets,
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: false,
+			plugins: {
+				legend: { position: 'top', labels: { color: darkText, font: { size: 11 } } },
+				tooltip: {
+					mode: 'index',
+					intersect: false,
+					callbacks: {
+						label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toLocaleString()}`,
+					},
+				},
+			},
+			scales: {
+				x: {
+					ticks: { color: darkText, maxRotation: 45, font: { size: 10 } },
+					grid: { color: darkGrid },
+				},
+				y: {
+					ticks: { color: darkText, beginAtZero: true },
+					grid: { color: darkGrid },
+				},
+			},
+		},
+	});
+
 	// --- 折线图 1: 总体使用量百分比 ---
+
 	const overallCanvas = document.getElementById('usage-chart-overall');
 	const overallCtx = overallCanvas.getContext('2d');
 	usageCharts.overall = new Chart(overallCtx, {
