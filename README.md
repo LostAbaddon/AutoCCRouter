@@ -1,7 +1,7 @@
 # CC2LLM
 
 > - AUTHOR: [LostAbaddon](lostabaddon@gmail.com)
-> - VERSION: 2.0.1
+> - VERSION: 2.1.0
 
 将 Claude Code / Claude Cowork / Codex CLI / Codex App / Gemini CLI 请求透明转发到多厂商 LLM 的桥接代理，支持自动话题分类、智能路由和 Web 管理面板。
 
