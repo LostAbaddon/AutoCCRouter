@@ -1,7 +1,7 @@
 # CC2LLM
 
 > - AUTHOR: [LostAbaddon](lostabaddon@gmail.com)
-> - VERSION: 2.1.0
+> - VERSION: 2.2.0
 
 将 Claude Code / Claude Cowork / Codex CLI / Codex App / Gemini CLI 请求透明转发到多厂商 LLM 的桥接代理，支持自动话题分类、智能路由和 Web 管理面板。
 
@@ -13,6 +13,7 @@
 - **跨协议转换** — Anthropic ↔ OpenAI ↔ Gemini 请求/响应格式自动互转，保留 streaming、tool use、thinking 等高级特性
 - **用量追踪** — 按天/周/月/年统计各 Provider/Model 的调用次数和 Token 消耗，管理面板内置可视化图表
 - **Web 管理面板** — 可视化编辑 Provider、Model Mapping、Agent（Working Mode）、Prompt，无需重启服务即时生效
+- **Token 与缓存优化** — 自动拦截 Claude 工具发出的防护性/计费请求，清除会破坏上游 Prompt Cache 的干扰标头，显著降低实际 Token 消耗并提升缓存命中率
 
 ## 快速开始
 
@@ -79,7 +80,7 @@ claude --dangerously-skip-permissions --allow-dangerously-skip-permissions \
 npm start claude
 ```
 
-该命令自动设置环境变量并启动 Claude Code。
+该命令自动设置 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` 两个基础环境变量，并以免权限确认模式启动 Claude Code。如需启用方式一中的高级变量（禁用非核心流量、YOLO 模式等），请手动设置环境变量后使用方式一启动。
 
 ### Claude Cowork 接入
 
@@ -188,6 +189,8 @@ Codex CLI 发送的模型名是 OpenAI 风格（如 `gpt-5.4`、`gpt-5`、`codex
 ```
 
 > 映射规则：按 `prefix` 长度降序匹配，`gpt-5.4` 会优先命中 `gpt-5.4` 前缀而非 `gpt-5`。
+>
+> 以上示例中的模型名（`gpt-5.4`、`deepseek-v4-pro` 等）为演示前缀，实际使用时请参考 `config.template.json` 中的最新配置或将你所用客户端实际发送的模型名填入映射。
 
 #### 验证配置
 
@@ -396,6 +399,8 @@ cc2llm 使用统一的 `modelMapping` 前缀匹配机制处理所有客户端的
 - `gemini-2.5-flash` → 命中 `gemini-2.5` 前缀
 - 空字符串 `prefix` 作为兜底匹配，通常无需设置
 
+> 以上示例中的模型名均为演示前缀。实际使用时请根据 `config.template.json` 中的最新配置和你所用客户端实际发送的模型名来编写映射规则。
+
 ## 配置
 
 `config.json` 结构：
@@ -534,6 +539,22 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 
 管理面板 **Usage** 标签页提供时间范围筛选、聚合粒度切换和 Chart.js 可视化图表。API 端点为 `GET /api/usage?from=YYYY-MM-DD&to=YYYY-MM-DD&unit=day|week|month|year`。
 
+## Token 与缓存优化
+
+Claude 系列工具（Claude Code / Cowork）会向 API 发出两类对上游转发无益、反而消耗 Token 或破坏缓存的特殊请求与标头。cc2llm 在代理层自动识别并拦截，无需用户任何配置。
+
+### 1. 防护性请求拦截
+
+Claude Code 会定期发出"守护"请求（daemon request）以探测服务可用性或维护计费周期，其典型特征为 `max_tokens ≤ 10`、无 system prompt、单条简短 user 消息。这类请求只消耗输入 Token，不会产生有意义的输出。
+
+cc2llm 检测到此类请求后直接返回 `400` 状态码并附带 `{"input_tokens": 0}`，将 Token 消耗降为零。
+
+### 2. Billing Header 清除
+
+Claude 原生 API 会在 system prompt 和消息内容末尾注入 `x-anthropic-billing-header` 标头（以文本形式嵌入 content）。该标头每轮不同，会导致上游 Provider 的 Prompt Cache 命中失败——即使对话内容未变，上游服务也会因这段差异重新计算全部输入。
+
+cc2llm 在转发请求前自动从 `system` 和 `messages[].content` 中剥离该标头，确保相同上下文在上游服务端产生一致的哈希，最大化缓存命中率。
+
 ## 架构
 
 ```
@@ -668,8 +689,9 @@ cc2llm/
 │   └── classifier-system.md  # 分类器 System Prompt
 ├── data/
 │   └── usage/                # 用量数据（YYYY-MM-DD.json）
+├── logs/                     # 跨协议调试日志（请求/上游/响应/结果分阶段记录）
 └── test/
-    └── test.js
+    └── test.js               # 测试套件
 ```
 
 ## 模型列表与过滤
