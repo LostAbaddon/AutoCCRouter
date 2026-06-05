@@ -1,7 +1,7 @@
 # CC2LLM
 
 > - AUTHOR: [LostAbaddon](lostabaddon@gmail.com)
-> - VERSION: 2.2.1
+> - VERSION: 2.2.2
 
 将 Claude Code / Claude Cowork / Codex CLI / Codex App / Gemini CLI 请求透明转发到多厂商 LLM 的桥接代理，支持自动话题分类、智能路由和 Web 管理面板。
 
@@ -711,22 +711,6 @@ cc2llm/
 ```
 
 过滤规则按 Provider 名称匹配，正则大小写不敏感。不在此文件中的 Provider 不做过滤。
-
-## 与 cc2deepseek 的关系
-
-cc2llm 是 cc2deepseek 的演进版本，从"单厂商一对一转发"升级为"多厂商智能路由"：
-
-| 维度 | cc2deepseek | cc2llm |
-|------|------------|--------|
-| 厂商数 | 1（DeepSeek） | 无限制 |
-| 客户端 | Claude Code | Claude Code/Cowork + Codex CLI/App + Gemini CLI |
-| 协议 | Anthropic 透传 | 三种协议互转 + 原生协议接入 |
-| 路由 | 固定前缀映射 | 固定映射 + AI 话题分类 |
-| 管理 | 无 | Web 管理面板 |
-| Prompt | 硬编码 | 文件化管理 + 在线编辑 |
-| 用量追踪 | 无 | 按天统计 + 可视化图表 |
-| Thinking 处理 | 无 | 自动捕获/恢复 thinking 块 |
-| Cache 优化 | 无 | 自动注入 cache_control 断点 |
 
 ## 许可
 
