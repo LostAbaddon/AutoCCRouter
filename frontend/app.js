@@ -303,24 +303,70 @@ const bindProviderChange = (modelList) => {
 
 let currentAgentConfigSet = 'defaults';
 
-const agentModeFormHtml = (mode, spec, modelList, providers) => {
-	// spec 是 "provider/model" 字符串或数组 ["provider/model", ...]
-	const firstSpec = Array.isArray(spec) ? spec[0] : (spec || '');
-	let currentProvider = '';
-	let currentModel = '';
-	if (firstSpec && typeof firstSpec === 'string') {
-		const idx = firstSpec.indexOf('/');
-		if (idx > 0) {
-			currentProvider = firstSpec.substring(0, idx);
-			currentModel = firstSpec.substring(idx + 1);
-		}
+// 将 agent value (字符串/数组/对象) 归一化为 { description, models[] }
+// 用于前端展示和编辑
+const normalizeAgentForUI = (mode, value) => {
+	if (typeof value === 'string') {
+		return { description: mode, models: [value] };
 	}
+	if (Array.isArray(value)) {
+		return { description: mode, models: value };
+	}
+	if (value && typeof value === 'object' && !Array.isArray(value)) {
+		const models = typeof value.models === 'string' ? [value.models] : (Array.isArray(value.models) ? value.models : []);
+		return {
+			description: (typeof value.description === 'string' ? value.description : null) || mode,
+			models,
+		};
+	}
+	return null;
+};
 
-	const providerOptions = providers.map((prov) =>
-		`<option value="${esc(prov)}" ${currentProvider === prov ? 'selected' : ''}>${esc(prov)}</option>`
-	).join('');
+// 解析 "provider/model" 字符串为 { provider, model }，失败返回空对象
+const parseSpecPair = (spec) => {
+	if (typeof spec !== 'string' || !spec) {
+		return { provider: '', model: '' };
+	}
+	const idx = spec.indexOf('/');
+	if (idx <= 0) {
+		return { provider: '', model: spec };
+	}
+	return {
+		provider: spec.substring(0, idx),
+		model: spec.substring(idx + 1),
+	};
+};
 
-	const modelOptions = buildModelOptions(modelList || {}, currentProvider, currentModel);
+const renderModelsListHtml = (models, providers, modelList) => {
+	return models.map((m, idx) => {
+		const { provider, model } = parseSpecPair(m);
+		const providerOptions = providers.map((prov) =>
+			`<option value="${esc(prov)}" ${provider === prov ? 'selected' : ''}>${esc(prov)}</option>`
+		).join('');
+		const modelOptions = buildModelOptions(modelList || {}, provider, model);
+		return `
+			<div class="form-row model-row" data-idx="${idx}" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">
+				<div style="flex:1">
+					<label style="font-size:11px;color:#8b949e">Provider</label>
+					<select class="form-model-provider" data-idx="${idx}" style="width:100%;background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:13px">
+						<option value="">Select...</option>
+						${providerOptions}
+					</select>
+				</div>
+				<div style="flex:2">
+					<label style="font-size:11px;color:#8b949e">Model</label>
+					<select class="form-model-target" data-idx="${idx}" style="width:100%;background:#0f1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 10px;font-size:13px">
+						${modelOptions}
+					</select>
+				</div>
+				<button type="button" class="btn-danger btn-sm btn-remove-model" data-idx="${idx}">Remove</button>
+			</div>
+		`;
+	}).join('');
+};
+
+const agentModeFormHtml = (mode, spec, modelList, providers) => {
+	const normalized = normalizeAgentForUI(mode, spec) || { description: mode, models: [] };
 
 	return `
 		<div class="form-group">
@@ -329,17 +375,16 @@ const agentModeFormHtml = (mode, spec, modelList, providers) => {
 			<span style="font-size:11px;color:#8b949e">Special modes: "default" (fallback), "quick" (classifier model)</span>
 		</div>
 		<div class="form-group">
-			<label>Provider</label>
-			<select id="form-provider">
-				<option value="">Select a provider...</option>
-				${providerOptions}
-			</select>
+			<label>Description</label>
+			<input id="form-description" value="${esc(normalized.description)}" placeholder="Short label shown to the classifier">
+			<span style="font-size:11px;color:#8b949e">Sent to the classifier as the mode's description. Defaults to the mode name when empty.</span>
 		</div>
 		<div class="form-group">
-			<label>Target Model</label>
-			<select id="form-target">
-				${modelOptions}
-			</select>
+			<label>Models <span style="font-weight:400;color:#8b949e">(one entry per row; a random pick is used per request)</span></label>
+			<div id="form-models-list">
+				${renderModelsListHtml(normalized.models.length > 0 ? normalized.models : [''], providers, modelList)}
+			</div>
+			<button type="button" id="form-add-model" class="btn-secondary btn-sm" style="margin-top:4px">+ Add Model</button>
 		</div>
 	`;
 };
@@ -384,26 +429,22 @@ const loadAgents = async () => {
 	table.innerHTML = '';
 
 	for (const [mode, spec] of Object.entries(agentSet)) {
-		if (typeof spec !== 'string' && !Array.isArray(spec)) {
+		const normalized = normalizeAgentForUI(mode, spec);
+		if (!normalized || normalized.models.length === 0) {
 			continue;
 		}
-		const displaySpec = Array.isArray(spec) ? spec.join(', ') : spec;
-		let providerName = '';
-		let modelName = '';
-		const firstSpec = Array.isArray(spec) ? spec[0] : spec;
-		if (firstSpec && typeof firstSpec === 'string') {
-			const idx = firstSpec.indexOf('/');
-			if (idx > 0) {
-				providerName = firstSpec.substring(0, idx);
-				modelName = firstSpec.substring(idx + 1);
-			}
-		}
-		const isArray = Array.isArray(spec);
+		const firstSpec = normalized.models[0] || '';
+		const { provider: providerName, model: modelName } = parseSpecPair(firstSpec);
+		const modelCount = normalized.models.length;
+		const hasModels = modelCount > 1;
+		const modelsDisplay = normalized.models.join(', ');
+		const descDisplay = normalized.description !== mode ? normalized.description : '';
+
 		table.innerHTML += `<tr>
-			<td><code>${esc(mode)}</code></td>
-			<td>${esc(providerName)}${isArray ? ' <span style="color:#d29922">+more</span>' : ''}</td>
-			<td><code>${esc(modelName)}${isArray ? ' <span style="color:#d29922">+more</span>' : ''}</code></td>
-			<td title="${esc(displaySpec)}" style="font-size:11px;color:#8b949e;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(displaySpec)}</td>
+			<td><code>${esc(mode)}${descDisplay ? '<br><span style="font-size:10px;color:#8b949e">' + esc(descDisplay) + '</span>' : ''}</code></td>
+			<td>${esc(providerName)}${hasModels ? ' <span style="color:#d29922">+more</span>' : ''}</td>
+			<td><code>${esc(modelName)}${hasModels ? ' <span style="color:#d29922">+' + (modelCount - 1) + '</span>' : ''}</code></td>
+			<td title="${esc(modelsDisplay)}" style="font-size:11px;color:#8b949e;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(modelsDisplay)}</td>
 			<td class="actions">
 				<button class="btn-secondary btn-sm" data-action="edit-agent-mode" data-mode="${esc(mode)}">Edit</button>
 				<button class="btn-danger" data-action="delete-agent-mode" data-mode="${esc(mode)}">Delete</button>
@@ -423,6 +464,58 @@ const loadAgents = async () => {
 	}
 
 	bindAgentActions();
+};
+
+// 为 modal 中的 model 列表绑定事件（添加/删除行、provider change 联动 model 下拉）
+let modelListCache = {};
+
+const bindModelListEvents = (modelList) => {
+	modelListCache = modelList || {};
+
+	// + Add Model 按钮
+	const addBtn = document.getElementById('form-add-model');
+	if (addBtn) {
+		addBtn.onclick = () => {
+			const providers = Object.keys(modelListCache);
+			const idx = document.querySelectorAll('#form-models-list .model-row').length;
+			const newRow = document.createElement('div');
+			newRow.className = 'model-row';
+			newRow.dataset.idx = idx;
+			newRow.style.cssText = 'display:flex;gap:8px;align-items:flex-end;margin-bottom:8px';
+			newRow.innerHTML = renderModelsListHtml([''], providers, modelListCache);
+			const list = document.getElementById('form-models-list');
+			list.appendChild(newRow);
+			bindModelRowEvents(newRow);
+		};
+	}
+
+	// 绑定现有行的 remove 和 provider change
+	document.querySelectorAll('#form-models-list .model-row').forEach((row) => {
+		bindModelRowEvents(row);
+	});
+};
+
+const bindModelRowEvents = (row) => {
+	// Remove 按钮
+	const removeBtn = row.querySelector('.btn-remove-model');
+	if (removeBtn) {
+		removeBtn.onclick = () => {
+			const rows = document.querySelectorAll('#form-models-list .model-row');
+			if (rows.length <= 1) {
+				return; // 至少保留一行
+			}
+			row.remove();
+		};
+	}
+
+	// Provider change → 更新对应行的 model 下拉
+	const provSelect = row.querySelector('.form-model-provider');
+	const modelSelect = row.querySelector('.form-model-target');
+	if (provSelect && modelSelect) {
+		provSelect.onchange = () => {
+			modelSelect.innerHTML = buildModelOptions(modelListCache, provSelect.value, '');
+		};
+	}
 };
 
 const bindAgentActions = () => {
@@ -447,18 +540,26 @@ const bindAgentActions = () => {
 			const spec = agentSet[mode] || '';
 
 			showModal(`Edit Mode: ${mode}`, agentModeFormHtml(mode, spec, modelList, Object.keys(config.providers || {})), async () => {
-				const provider = document.getElementById('form-provider').value;
-				const model = document.getElementById('form-target').value;
-				if (!provider || !model) {
-					alert('Provider and model are required');
+				const description = document.getElementById('form-description').value.trim() || mode;
+				const providerSelects = document.querySelectorAll('#form-models-list .form-model-provider');
+				const modelSelects = document.querySelectorAll('#form-models-list .form-model-target');
+				const models = [];
+				for (let i = 0; i < providerSelects.length; i++) {
+					const prov = providerSelects[i].value;
+					const mdl = modelSelects[i].value;
+					if (prov && mdl) {
+						models.push(prov + '/' + mdl);
+					}
+				}
+				if (models.length === 0) {
+					alert('At least one provider/model pair is required');
 					return;
 				}
-				const specValue = provider + '/' + model;
-				agentSet[mode] = specValue;
+				agentSet[mode] = { description, models };
 				await api.put('/api/config', { agents: allAgents });
 			});
 
-			bindProviderChange(modelList);
+			bindModelListEvents(modelList);
 		});
 	});
 
@@ -1240,20 +1341,33 @@ const init = () => {
 		]);
 		showModal('Add Mode', agentModeFormHtml('', '', modelList, Object.keys(config.providers || {})), async () => {
 			const mode = document.getElementById('form-mode').value.trim();
-			const provider = document.getElementById('form-provider').value;
-			const model = document.getElementById('form-target').value;
-			if (!mode || !provider || !model) {
-				alert('Mode name, provider, and model are required');
+			if (!mode) {
+				alert('Mode name is required');
+				return;
+			}
+			const description = document.getElementById('form-description').value.trim() || mode;
+			const providerSelects = document.querySelectorAll('#form-models-list .form-model-provider');
+			const modelSelects = document.querySelectorAll('#form-models-list .form-model-target');
+			const models = [];
+			for (let i = 0; i < providerSelects.length; i++) {
+				const prov = providerSelects[i].value;
+				const mdl = modelSelects[i].value;
+				if (prov && mdl) {
+					models.push(prov + '/' + mdl);
+				}
+			}
+			if (models.length === 0) {
+				alert('At least one provider/model pair is required');
 				return;
 			}
 			const allAgents = config.agents || {};
 			const agentSet = allAgents[currentAgentConfigSet] || {};
-			agentSet[mode] = provider + '/' + model;
+			agentSet[mode] = { description, models };
 			allAgents[currentAgentConfigSet] = agentSet;
 			await api.put('/api/config', { agents: allAgents });
 		});
 
-		bindProviderChange(modelList);
+		bindModelListEvents(modelList);
 	});
 
 	// Add new config set
