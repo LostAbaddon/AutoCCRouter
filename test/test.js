@@ -83,6 +83,66 @@ test('mapModel - shorter prefix when longer not present', () => {
 	assert(result.targetModel === 'model-general', 'should fall back to shorter prefix claude-opus');
 });
 
+
+test('mapModel - wildcard match', () => {
+	const mapping = [
+		{ prefix: 'gpt-*-mini', target: 'gpt-mini-mapped', provider: 'openai' },
+		{ prefix: 'gemini-*', target: 'gemini-default', provider: 'google' },
+	];
+
+	// * matches any sequence
+	const r1 = mapModel('gpt-5.4-mini', mapping);
+	assert(r1 !== null, 'gpt-5.4-mini should match gpt-*-mini');
+	assert(r1.targetModel === 'gpt-mini-mapped', 'should map to gpt-mini-mapped');
+
+	const r2 = mapModel('gpt-5-mini', mapping);
+	assert(r2.targetModel === 'gpt-mini-mapped', 'gpt-5-mini should also match gpt-*-mini');
+
+	const r3 = mapModel('gemini-2.5-flash', mapping);
+	assert(r3 !== null, 'gemini-2.5-flash should match gemini-*');
+	assert(r3.targetModel === 'gemini-default', 'should map to gemini-default');
+});
+
+test('mapModel - wildcard with multiple stars', () => {
+	const mapping = [
+		{ prefix: '*-*-mini', target: 'any-mini', provider: 'openai' },
+	];
+
+	const r = mapModel('foo-bar-mini', mapping);
+	assert(r !== null, 'foo-bar-mini should match *-*-mini');
+	assert(r.targetModel === 'any-mini', 'should map to any-mini');
+});
+
+test('mapModel - precise prefix wins over wildcard', () => {
+	const mapping = [
+		{ prefix: 'gpt-5.4-mini', target: 'precise', provider: 'openai' },
+		{ prefix: 'gpt-*-mini', target: 'wildcard', provider: 'google' },
+	];
+
+	// 精确前缀优先
+	const r = mapModel('gpt-5.4-mini', mapping);
+	assert(r.targetModel === 'precise', 'precise gpt-5.4-mini should win over wildcard gpt-*-mini');
+	assert(r.provider === 'openai', 'provider should match precise rule');
+
+	// 通配兜底
+	const r2 = mapModel('gpt-6-mini', mapping);
+	assert(r2.targetModel === 'wildcard', 'unmatched variant should hit wildcard');
+});
+
+test('mapModel - wildcard at start', () => {
+	const mapping = [
+		{ prefix: '*-preview', target: 'preview-model', provider: 'google' },
+	];
+
+	const r = mapModel('gemini-3.1-pro-preview', mapping);
+	assert(r !== null, 'gemini-3.1-pro-preview should match *-preview');
+	assert(r.targetModel === 'preview-model', 'should map to preview-model');
+
+	// 不匹配的
+	const r2 = mapModel('gemini-3.1-pro', mapping);
+	assert(r2 === null, 'gemini-3.1-pro should not match *-preview');
+});
+
 test('buildOpenAIRequest - basic conversion', () => {
 	const anthropicBody = {
 		model: 'claude-sonnet-4-6',
