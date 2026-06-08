@@ -198,11 +198,23 @@
 	"agents": {
 		"defaults": {
 			"default": "deepseek/deepseek-v4-pro",
-			"quick": "google/gemini-2.5-flash-preview",
-			"plan": "deepseek/deepseek-v4-pro",
-			"code": "deepseek/deepseek-v4-pro",
-			"writing": "deepseek/deepseek-v4-flash",
-			"research": "google/gemini-3.1-pro-preview"
+			"quick": "google/gemini-3.5-flash",
+			"plan": {
+				"description": "当需要指定或者修改计划的时候选用本模式",
+				"models": [ "google/gemini-3.1-pro-preview" ]
+			},
+			"code": {
+				"description": "当需要阅读、修改、编写代码，或者设计网页端、APP端，或者设计并操作数据库，或者进行架构分析与设计，等等一系列和编程、软件开发、软件设计相关的任务时，优先选用本模式",
+				"models": "minimax/minimax-m3"
+			},
+			"writing": {
+				"description": "当需要编写文档、报告、诗歌、小说、文学批评、书稿编辑等文字工作时，优先选用本模式",
+				"models": "deepseek/deepseek-v4-pro"
+			},
+			"research": {
+				"description": "当需要进行严肃思考、头脑风暴、学术讨论时，优先选用本模式",
+				"models": [ "google/gemini-3.1-pro-preview-customtools", "deepseek/deepseek-v4-pro", "minimax/minimax-m3" ]
+			}
 		}
 	},
 	"modelMapping": [
