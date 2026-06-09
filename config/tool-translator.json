@@ -24,16 +24,10 @@
 			"matchStrategies": [
 				{ "key": "web_search", "match": { "name": "google_web_search" }, "isBuiltin": true, "_note": "Gemini CLI 当前: google_web_search 作为 function declaration(展平后顶层 name)" },
 				{ "key": "web_fetch", "match": { "name": "web_fetch" }, "isBuiltin": true, "_note": "Gemini CLI 当前: web_fetch 作为 function declaration(参数叫 prompt)" },
-				{ "key": "web_search", "match": { "googleSearch": "$present" }, "isBuiltin": true, "_note": "未来兼容: 若 Gemini CLI 改用原生 googleSearch 字段" },
-				{ "key": "web_fetch", "match": { "urlContext": "$present" }, "isBuiltin": true, "_note": "未来兼容: 若 Gemini CLI 改用原生 urlContext 字段" }
+				{ "key": "web_search", "match": { "googleSearch": "$present" }, "isBuiltin": true, "_note": "兼容原生内置工具调用协议" },
+				{ "key": "web_fetch", "match": { "urlContext": "$present" }, "isBuiltin": true, "_note": "兼容原生内置工具调用协议" },
+				{ "key": "url_context", "match": { "urlContext": "$present" }, "isBuiltin": true, "_note": "兼容原生内置工具调用协议" }
 			]
-		},
-		"gemini_native": {
-			"matchStrategies": [
-				{ "key": "web_search", "match": { "googleSearch": "$present" } },
-				{ "key": "url_context", "match": { "urlContext": "$present" } }
-			],
-			"_note": "为 -customtools 后缀 Gemini 模型保留(可能直接用原生 googleSearch/urlContext 字段)"
 		}
 	},
 	"defaultRender": {

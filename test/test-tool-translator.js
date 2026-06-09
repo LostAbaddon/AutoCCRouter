@@ -145,16 +145,16 @@ test('Gemini CLI 未来兼容: urlContext 原生字段 → minimax: 走 alias,�
 	assert(result[0].type === 'web_fetch_20250929', 'urlContext → web_fetch_20250929');
 });
 
-test('Gemini native 路径 (gemini_native copilot) — googleSearch 字段 → Anthropic web_search', () => {
+test('Gemini native 字段 → Anthropic web_search (合并后走 gemini_wrapped)', () => {
 	const tools = [{ googleSearch: {} }];
-	const result = translateTools(tools, 'gemini_native', 'deepseek');
-	assert(result.length === 1, 'gemini_native 识别 googleSearch');
+	const result = translateTools(tools, 'gemini_wrapped', 'deepseek');
+	assert(result.length === 1, '合并后 gemini_wrapped 识别 googleSearch 原生字段');
 	assert(result[0].type === 'web_search_20260209', '渲染为 Anthropic 内置');
 });
 
-test('Gemini native 路径 (gemini_native copilot) — urlContext 字段 → deepseek: 不支持,丢弃', () => {
+test('Gemini native 字段 urlContext → deepseek: 不支持,丢弃', () => {
 	const tools = [{ urlContext: {} }];
-	const result = translateTools(tools, 'gemini_native', 'deepseek');
+	const result = translateTools(tools, 'gemini_wrapped', 'deepseek');
 	assert(result.length === 0, 'DS 不支持 urlContext/web_fetch,应丢弃');
 });
 
@@ -170,10 +170,10 @@ test('Claude Code 原生 web_search → 原样透传', () => {
 	assert(result[0].max_uses === 5, '原样透传');
 });
 
-test('Gemini native -customtools: googleSearch 字段被识别为 web_search builtin', () => {
+test('Gemini native (customtools模式) — googleSearch → google 原生 web_search builtin', () => {
 	// providerRender.google.web_search → googleSearch: {} (直接输出原生协议)
 	const tools = [{ googleSearch: {} }];
-	const result = translateTools(tools, 'gemini_native', 'google');
+	const result = translateTools(tools, 'gemini_wrapped', 'google');
 	assert(result.length === 1, '应翻译出 1 个工具');
 	assert(result[0].googleSearch !== undefined, '【关键】google provider 下转为 googleSearch: {}');
 });

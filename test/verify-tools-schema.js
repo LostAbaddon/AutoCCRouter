@@ -102,14 +102,15 @@ console.log('\n=== Test 4: gemini_wrapped → google ===');
 }
 
 // ============================================================
-// Test 5: gemini_native 直接发原生字段 → deepseek 应转 Anthropic
+// Test 5: gemini_wrapped 识别 googleSearch 原生字段 → deepseek 转 Anthropic
+// (合并 gemini_native 后,所有 Gemini CLI 形态统一走 gemini_wrapped)
 // ============================================================
-console.log('\n=== Test 5: gemini_native → deepseek ===');
+console.log('\n=== Test 5: gemini_wrapped 原生字段 → deepseek ===');
 
 {
 	const tools = translateTools(
 		[{ googleSearch: {} }],
-		'gemini_native', 'deepseek',
+		'gemini_wrapped', 'deepseek',
 	);
 
 	log(tools.length === 1, `总长度 1, 实际 ${tools.length}`);
