@@ -157,6 +157,8 @@ data/
 /GEMINI.md
 /.gemini
 .playwright-mcp
+template.md
+/docs
 
 # local configs
 config.json

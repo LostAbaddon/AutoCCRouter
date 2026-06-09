@@ -1,0 +1,56 @@
+{
+	"version": "1.0.0",
+	"description": "Copilot 内置工具 ↔ Provider 工具翻译表。覆盖当前所有 copilot + 未来可能扩展的原生格式。",
+	"copilots": {
+		"claude_code": {
+			"matchStrategies": [
+				{ "key": "web_search", "match": { "type": "web_search_20260209" } },
+				{ "key": "web_fetch", "match": { "type": "web_fetch_20250929" } }
+			]
+		},
+		"openai_responses": {
+			"matchStrategies": [
+				{ "key": "web_search", "match": { "type": "web_search" } },
+				{ "key": "tool_search", "match": { "type": "tool_search" }, "isBuiltin": false }
+			]
+		},
+		"openai_chat": {
+			"matchStrategies": [
+				{ "key": "web_search", "match": { "function.name": "web_search" }, "isBuiltin": true }
+			]
+		},
+		"gemini_wrapped": {
+			"matchStrategies": [
+				{ "key": "web_search", "match": { "name": "google_web_search" }, "isBuiltin": true, "_note": "Gemini CLI 当前: google_web_search 作为 function declaration(展平后顶层 name)" },
+				{ "key": "web_fetch", "match": { "name": "web_fetch" }, "isBuiltin": true, "_note": "Gemini CLI 当前: web_fetch 作为 function declaration(参数叫 prompt)" },
+				{ "key": "web_search", "match": { "googleSearch": "$present" }, "isBuiltin": true, "_note": "未来兼容: 若 Gemini CLI 改用原生 googleSearch 字段" },
+				{ "key": "web_fetch", "match": { "urlContext": "$present" }, "isBuiltin": true, "_note": "未来兼容: 若 Gemini CLI 改用原生 urlContext 字段" }
+			]
+		},
+		"gemini_native": {
+			"matchStrategies": [
+				{ "key": "web_search", "match": { "googleSearch": "$present" } },
+				{ "key": "url_context", "match": { "urlContext": "$present" } }
+			],
+			"_note": "为 -customtools 后缀 Gemini 模型保留(可能直接用原生 googleSearch/urlContext 字段)"
+		}
+	},
+	"defaultRender": {
+		"web_search": { "type": "web_search_20260209", "name": "web_search", "max_uses": 5 }
+	},
+	"providerRender": {
+		"deepseek": {
+			"web_search": { "type": "web_search_20260209", "name": "web_search", "max_uses": 5 }
+		},
+		"minimax": {
+			"web_search":  { "type": "web_search_20260209", "name": "web_search", "max_uses": 5 },
+			"web_fetch":   { "type": "web_fetch_20250929",  "name": "web_fetch",  "max_uses": 5 },
+			"url_context": { "$alias": "web_fetch" }
+		},
+		"google": {
+			"web_search": { "googleSearch": {} },
+			"web_fetch":  { "urlContext": {} },
+			"url_context": { "urlContext": {} }
+		}
+	}
+}

@@ -1,6 +1,6 @@
 {
 	"name": "cc2llm",
-	"version": "2.2.2",
+	"version": "2.2.3",
 	"description": "Multi-provider LLM bridge proxy: Claude Code/Cowork → DeepSeek, Gemini, GPT, Kimi, MiniMax, OpenRouter & more",
 	"main": "index.js",
 	"scripts": {
