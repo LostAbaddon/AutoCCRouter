@@ -1,11 +1,42 @@
-const { loadConfig } = require('./lib/config');
+const fs = require('fs');
+const path = require('path');
+const { loadConfig, watchConfig } = require('./lib/config');
 const { log } = require('./lib/logger');
 const { spawn, exec } = require('child_process');
+
+// 启动时清空 logs 目录下的所有历史文件，确保本次运行的日志独立。
+// 注意：进程被守护工具自动重启时，上次崩溃的日志会被清空，无法事后追溯。
+const logsDir = path.join(__dirname, 'logs');
+try {
+	if (fs.existsSync(logsDir)) {
+		fs.rmSync(logsDir, { recursive: true, force: true });
+	}
+	fs.mkdirSync(logsDir, { recursive: true });
+}
+catch (e) {
+	console.error(`[startup] 清空 logs 目录失败: ${e.message}`);
+}
 
 const config = loadConfig();
 global.cc2llmConfig = config;
 
 const getConfig = () => global.cc2llmConfig;
+
+// config.json 外部变更时热生效：mutate 同一引用，而非替换全局对象。
+// 这与 lib/admin/routes.js 中 handlePutConfig 的字段合并方式保持一致，
+// 保证 proxy-server、admin routes、providers 等所有持有原引用的模块立刻看到变更。
+watchConfig((newConfig) => {
+	const cfg = global.cc2llmConfig;
+	if (newConfig.server) cfg.server = { ...cfg.server, ...newConfig.server };
+	if (newConfig.providers) cfg.providers = newConfig.providers;
+	if (newConfig.modelMapping) cfg.modelMapping = newConfig.modelMapping;
+	if (newConfig.agents) cfg.agents = newConfig.agents;
+	if (newConfig.logLevel) cfg.logLevel = newConfig.logLevel;
+	if (newConfig.defaultMaxTokens !== undefined) cfg.defaultMaxTokens = newConfig.defaultMaxTokens;
+	if (newConfig.conversationGroups !== undefined) cfg.conversationGroups = newConfig.conversationGroups;
+	if (newConfig.modeCacheTtl !== undefined) cfg.modeCacheTtl = newConfig.modeCacheTtl;
+	log('info', '[config] 已热重载 config.json');
+});
 
 const cmd = process.argv[2];
 

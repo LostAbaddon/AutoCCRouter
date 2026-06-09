@@ -13,6 +13,7 @@
 - **跨协议转换** — Anthropic ↔ OpenAI ↔ Gemini 请求/响应格式自动互转，保留 streaming、tool use、thinking 等高级特性
 - **用量追踪** — 按天/周/月/年统计各 Provider/Model 的调用次数和 Token 消耗，管理面板内置可视化图表
 - **Web 管理面板** — 可视化编辑 Provider、Model Mapping、Agent（Working Mode）、Prompt，无需重启服务即时生效
+- **配置热生效** — 直接编辑 `config.json` 保存即可即时生效，与网页端保存行为一致；无需重启服务
 - **Token 与缓存优化** — 自动拦截 Claude 工具发出的防护性/计费请求，清除会破坏上游 Prompt Cache 的干扰标头，显著降低实际 Token 消耗并提升缓存命中率
 
 ## 快速开始
@@ -468,6 +469,17 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 - `claude-opus-4-7-20250805` → `deepseek-v4-pro`（前缀 `claude-opus` 命中第一条）
 - 空字符串 `prefix` 作为兜底匹配
 - 未匹配任何前缀 → 返回 400 错误
+- **通配符前缀**：`prefix` 中可包含 `*`，如 `"gpt-*-mini"`，等价于正则 `/^gpt-.*-mini/`。通配规则排在所有精确规则之后匹配；同组内按 `prefix` 字符串长度降序
+
+`provider` 为 `auto` 时，`target` 可以是数组：每次命中随机选取一个 spec（用于跨 Provider 负载分散）。例如：
+
+```json
+{
+  "prefix": "auto",
+  "target": ["deepseek/deepseek-v4-pro", "google/gemini-3.1-pro-preview"],
+  "provider": "auto"
+}
+```
 
 ### Auto Mode / Agents（智能路由）
 
@@ -477,32 +489,48 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 用户输入 → 话题分类器（classifier）→ 匹配 Working Mode → 路由到对应模型
 ```
 
-`agents` 配置支持多套配置集（Config Set），每套定义 Working Mode 与模型的对应关系：
+`agents` 配置支持多套配置集（Config Set），每套定义 Working Mode 与模型的对应关系。每个 mode 支持三种写法：
 
 ```json
 "agents": {
   "defaults": {
-    "default":   "deepseek/deepseek-v4-pro",
-    "quick":     "google/gemini-3.5-flash",
-    "plan":      ["deepseek/deepseek-v4-pro", "google/gemini-3.5-flash"],
-    "code":      "deepseek/deepseek-v4-pro",
-    "writing":   "deepseek/deepseek-v4-flash",
-    "research":  "google/gemini-3.1-pro-preview"
+    "default":  "deepseek/deepseek-v4-pro",
+    "quick":    "google/gemini-3.5-flash",
+
+    "plan":     ["google/gemini-3.1-pro-preview"],
+
+    "code": {
+      "description": "当需要阅读、修改、编写代码，或者设计网页端、APP 端，或者设计并操作数据库，或者进行架构分析与设计，等等一系列和编程、软件开发、软件设计相关的任务时，优先选用本模式",
+      "models":      "minimax/minimax-m3"
+    },
+    "research": {
+      "description": "当需要进行严肃思考、头脑风暴、学术讨论时，优先选用本模式",
+      "models": [
+        "google/gemini-3.1-pro-preview-customtools",
+        "deepseek/deepseek-v4-pro",
+        "minimax/minimax-m3"
+      ]
+    }
   },
   "fast": {
-    "default":  "deepseek/deepseek-v4-flash",
-    "quick":    "deepseek/deepseek-v4-flash",
-    "code":     "deepseek/deepseek-v4-pro"
+    "default": "deepseek/deepseek-v4-flash",
+    "quick":   "deepseek/deepseek-v4-flash",
+    "code":    "deepseek/deepseek-v4-pro"
   }
 }
 ```
 
+mode 值三种写法（可混用）：
+- **字符串**：`"deepseek/deepseek-v4-pro"`，最简形式
+- **字符串数组**：`["spec1", "spec2"]`，每次命中随机选一个（负载分散）
+- **对象**：`{ "description": "...", "models": "spec" | ["spec", ...] }`，可附带 `description` 帮助分类器识别场景，`models` 可为字符串或数组
+
+其它约定：
 - `defaults` — 默认配置集，modelMapping 中 `target: "auto"` 时使用
 - 命名配置集 — 在 modelMapping 中设置 `target` 为配置集名称（如 `"fast"`）即可切换整套模式映射
 - `default` — 每个配置集内的兜底模式，分类器未命中时使用
 - `quick` — 分类器自身使用的轻量模型（用于快速判断话题）。支持 Anthropic / OpenAI / Gemini 三种协议的 Provider
 - 其余 key — 自定义工作模式（如 `plan` / `code` / `writing` / `research`），分类器根据对话内容自动匹配
-- **数组负载分散**：当某个 mode 的值为数组时，每次命中随机选取一个 spec
 
 分类提示词可在管理面板的 **Prompts** 标签页实时编辑，或直接修改 `prompts/classifier.md`（分类 prompt）和 `prompts/classifier-system.md`（system prompt）。
 
@@ -527,7 +555,7 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 | Usage | 按天/周/月/年查看各 Provider/Model 调用量和 Token 消耗图表 |
 | Raw Config | 直接编辑完整 `config.json` |
 
-所有修改即时写回 `config.json` 和内存配置，无需重启服务。
+所有修改即时写回 `config.json` 和内存配置，无需重启服务。直接编辑 `config.json` 并保存同样会被监听并立即生效，等价于网页端保存。
 
 ## 用量追踪
 
@@ -547,7 +575,7 @@ Claude 系列工具（Claude Code / Cowork）会向 API 发出两类对上游转
 
 Claude Code 会定期发出"守护"请求（daemon request）以探测服务可用性或维护计费周期，其典型特征为 `max_tokens ≤ 10`、无 system prompt、单条简短 user 消息。这类请求只消耗输入 Token，不会产生有意义的输出。
 
-cc2llm 检测到此类请求后直接返回 `400` 状态码并附带 `{"input_tokens": 0}`，将 Token 消耗降为零。
+cc2llm 检测到此类请求后直接以 `200` 状态码返回 `{"input_tokens": 0}`，将 Token 消耗降为零，同时不让 Claude Code 的探测循环报错。
 
 ### 2. Billing Header 清除
 
@@ -653,12 +681,14 @@ cc2llm/
 ├── index.js                  # 入口，启动双端口服务 + claude/codex/gemini/wui 子命令
 ├── config.json               # 运行时配置（不提交）
 ├── config.template.json      # 配置模板
-├── model-filter.json         # 模型列表过滤规则
+├── config/
+│   ├── model-filter.json     # 模型列表过滤规则（按 Provider 的正则排除列表）
+│   └── tool-translator.json  # tool-translator 模块配置（copilots / providerRender / defaultRender）
 ├── package.json
 ├── LICENSE
 ├── README.md
 ├── lib/
-│   ├── config.js             # 配置读写、maxTokens 三层解析、向后兼容迁移
+│   ├── config.js             # 配置读写、maxTokens 三层解析、向后兼容迁移、文件变更热重载
 │   ├── logger.js             # 日志（debug/info/warn/error 四级过滤）
 │   ├── model-mapper.js       # 模型名前缀匹配映射
 │   ├── proxy-server.js       # 代理服务（:8764），多协议识别与路由分发
@@ -689,14 +719,17 @@ cc2llm/
 │   └── classifier-system.md  # 分类器 System Prompt
 ├── data/
 │   └── usage/                # 用量数据（YYYY-MM-DD.json）
-├── logs/                     # 跨协议调试日志（请求/上游/响应/结果分阶段记录）
+├── logs/                     # 跨协议调试日志（请求/上游/响应/结果分阶段记录），每次启动自动清空
 └── test/
-    └── test.js               # 测试套件
+    ├── test.js                  # 单元测试
+    ├── test-end-to-end.js       # 端到端测试
+    ├── test-tool-translator.js  # tool-translator 单元测试
+    └── verify-tools-schema.js   # tools schema 校验脚本
 ```
 
 ## 模型列表与过滤
 
-管理面板的 Providers 标签页支持从 Provider API 动态拉取可用模型列表（`GET /api/models?provider=xxx`）。为过滤掉 embedding、TTS、图像生成等非 LLM 模型，`model-filter.json` 按 Provider 配置正则排除规则：
+管理面板的 Providers 标签页支持从 Provider API 动态拉取可用模型列表（`GET /api/models`），按 Provider 分组返回经过滤后的 LLM 模型。为过滤掉 embedding、TTS、图像生成等非 LLM 模型，`model-filter.json` 按 Provider 配置正则排除规则：
 
 ```json
 {
