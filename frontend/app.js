@@ -726,6 +726,25 @@ const formatTokens = (n) => {
 	return String(n);
 };
 
+// 本地时间 -> "YYYY-MM-DD"（与 lib/usage-tracker.js 中的 toLocalDateStr 行为一致）
+const usagePad2 = (n) => String(n).padStart(2, '0');
+const toLocalDateStr = (d) => {
+	return `${d.getFullYear()}-${usagePad2(d.getMonth() + 1)}-${usagePad2(d.getDate())}`;
+};
+
+const updateUsageRangeSummary = (from, to, unit, periodCount) => {
+	const el = document.getElementById('usage-range-summary');
+	if (!el) {
+		return;
+	}
+	const unitLabel = ({ day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly' })[unit] || 'daily';
+	const periodWord = periodCount === 1 ? 'period' : 'periods';
+	// 部分为空时如实显示：避免用户误以为缺失的输入框会被自动填充
+	const fromLabel = from || 'earliest';
+	const toLabel = to || 'latest';
+	el.textContent = `Showing ${periodCount} ${unitLabel} ${periodWord} (${fromLabel} to ${toLabel})`;
+};
+
 const chartColors = [
 	'#58a6ff', '#3fb950', '#d29922', '#f78166', '#a371f7',
 	'#8b949e', '#79c0ff', '#56d364', '#e3b341', '#ff7b72',
@@ -733,8 +752,24 @@ const chartColors = [
 ];
 
 const destroyUsageCharts = () => {
-	Object.values(usageCharts).forEach((c) => c.destroy());
+	// Chart.js 4.x 的 chart.destroy() 会清理内联 CSS，但不会重置 canvas
+	// 原生的 width/height 属性（这些属性在初始化时被乘以 devicePixelRatio）。
+	// 如果不重置，下一次 new Chart() 在同一 canvas 上会再次乘以
+	// devicePixelRatio，造成"复合缩放"，导致刷新后图表尺寸/形状不一致。
+	// 解决：销毁后重新插入一个干净的 canvas 元素。
+	Object.keys(usageCharts).forEach((key) => {
+		if (usageCharts[key]) {
+			usageCharts[key].destroy();
+		}
+	});
 	usageCharts = {};
+	['copilot', 'overall', 'models', 'providers', 'calls', 'tokens', 'modes'].forEach((key) => {
+		const canvas = document.getElementById(`usage-chart-${key}`);
+		if (canvas && canvas.tagName === 'CANVAS') {
+			const parent = canvas.parentElement;
+			parent.innerHTML = `<canvas id="usage-chart-${key}"></canvas>`;
+		}
+	});
 };
 
 const loadUsage = async () => {
@@ -742,9 +777,26 @@ const loadUsage = async () => {
 	const toInput = document.getElementById('usage-to');
 	const unitSelect = document.getElementById('usage-unit');
 
-	const from = fromInput ? fromInput.value : '';
-	const to = toInput ? toInput.value : '';
+	let from = fromInput ? fromInput.value : '';
+	let to = toInput ? toInput.value : '';
 	const unit = unitSelect ? unitSelect.value : 'day';
+
+	// 默认时间范围回填：仅当 from 和 to 都为空时，自动填入"最近 7 天"，
+	// 与后端 lib/usage-tracker.js 的"最近 7 天"逻辑保持一致。
+	// 部分为空的情况保留原样（后端会按"无下界/无上界"处理），由摘要文本明确告知用户。
+	const today = new Date();
+	if (!from && !to) {
+		const start = new Date(today);
+		start.setDate(start.getDate() - 7);
+		from = toLocalDateStr(start);
+		to = toLocalDateStr(today);
+		if (fromInput) {
+			fromInput.value = from;
+		}
+		if (toInput) {
+			toInput.value = to;
+		}
+	}
 
 	const params = new URLSearchParams();
 	if (from) {
@@ -773,6 +825,7 @@ const loadUsage = async () => {
 		if (summary) {
 			summary.innerHTML = '<div class="card" style="text-align:center;color:#8b949e;padding:48px">No usage data in the selected range</div>';
 		}
+		updateUsageRangeSummary(from, to, unit, 0);
 		return;
 	}
 
@@ -849,6 +902,7 @@ const loadUsage = async () => {
 		periodAgg.set(entry.period, p);
 	});
 	const periods = [...periodAgg.keys()].sort();
+	updateUsageRangeSummary(from, to, unit, periods.length);
 	const callsByPeriod = periods.map((p) => periodAgg.get(p).calls);
 	const inputByPeriod = periods.map((p) => periodAgg.get(p).inputTokens);
 	const outputByPeriod = periods.map((p) => periodAgg.get(p).outputTokens);
