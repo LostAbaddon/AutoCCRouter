@@ -78,7 +78,6 @@ main {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 	gap: 16px;
-	margin-bottom: 24px;
 }
 
 .card {
@@ -86,6 +85,9 @@ main {
 	border: 1px solid #30363d;
 	border-radius: 8px;
 	padding: 16px;
+}
+#tab-dashboard .card {
+	margin-bottom: 24px;
 }
 
 .card h3 {

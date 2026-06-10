@@ -9,6 +9,7 @@
 
 - **多客户端支持** — Claude Code、Claude Cowork、Codex CLI、Codex App、Gemini CLI 均可通过同一代理端口接入，各自使用原生协议（Anthropic / OpenAI / Gemini）
 - **多厂商支持** — Anthropic、OpenAI、Gemini 三种协议兼容，覆盖 DeepSeek / Google / Moonshot / MiniMax / OpenRouter 等十余家厂商
+- **多 Key 负载均衡** — `apiKey` 支持数组格式，基于内存级加权随机算法实现多租户流量均衡；自动识别鉴权/欠费/业务错误标记 Key 状态并自愈
 - **自动模式（Auto Mode）** — 内置话题分类器，根据对话内容自动匹配最佳工作模式（编程 / 写作 / 研究 / 规划等），无需手动切换模型
 - **跨协议转换** — Anthropic ↔ OpenAI ↔ Gemini 请求/响应格式自动互转，保留 streaming、tool use、thinking 等高级特性
 - **用量追踪** — 按天/周/月/年统计各 Provider/Model 的调用次数和 Token 消耗，管理面板内置可视化图表
@@ -450,6 +451,27 @@ cc2llm 使用统一的 `modelMapping` 前缀匹配机制处理所有客户端的
 ```
 
 maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provider 级 `defaultMaxTokens` → 全局 `defaultMaxTokens` → 131072。
+
+#### 多 API Key 负载均衡
+
+`apiKey` 字段支持**数组格式**来配置同 Provider 的多个 Key。服务会基于内存级加权随机算法自动分配请求到不同 Key，实现故障自愈与负载均衡：
+
+```json
+"deepseek": {
+  "type": "anthropic",
+  "apiKey": ["sk-key1-xxx", "sk-key2-xxx", "sk-key3-xxx"],
+  "baseUrl": "..."
+}
+```
+
+**算法特性：**
+- **动态权重**：每次选择 Key 时，根据各 Key 的可用状态、当前并发数、历史完成数计算权重，均衡流量
+- **故障感知**：4XX 鉴权错误 / 2XX 中嵌入的业务错误 → 标记 Key 为不可用（权重降为 30），但不完全禁用
+- **Provider 级异常**：连接失败 / 5XX → 记录 Provider 级状态，不影响各 Key 的可用性标记
+- **自愈机制**：标记为不可用的 Key 若后续成功返回，立即恢复为可用（权重回到 100）
+- **绝不卡死**：所有 Key 均不可用时，以 30:30:... 等权重继续分发，一旦任一 Key 成功即回升
+
+**状态查看**：管理面板 `API > Key States` 可查看每个 Provider 的所有 Key 实时状态（可用性、并发数、完成数）。
 
 ### Model Mapping（模型名映射）
 
