@@ -12,6 +12,7 @@
 - **多 Key 负载均衡** — `apiKey` 支持数组格式，基于内存级加权随机算法实现多租户流量均衡；自动识别鉴权/欠费/业务错误标记 Key 状态并自愈
 - **自动模式（Auto Mode）** — 内置话题分类器，根据对话内容自动匹配最佳工作模式（编程 / 写作 / 研究 / 规划等），无需手动切换模型
 - **跨协议转换** — Anthropic ↔ OpenAI ↔ Gemini 请求/响应格式自动互转，保留 streaming、tool use、thinking 等高级特性
+- **内置工具翻译** — 自动识别并翻译 Claude Code / Codex / Gemini 客户端的 `web_search` / `web_fetch` 内置工具到目标 Provider 接受的格式（如 DeepSeek 的 `web_search_20260209`、Google 的 `googleSearch`），不支持时回落为占位响应，保证多轮 tool_use 链路不断裂
 - **用量追踪** — 按天/周/月/年统计各 Provider/Model 的调用次数和 Token 消耗，管理面板内置可视化图表
 - **Web 管理面板** — 可视化编辑 Provider、Model Mapping、Agent（Working Mode）、Prompt，无需重启服务即时生效
 - **配置热生效** — 直接编辑 `config.json` 保存即可即时生效，与网页端保存行为一致；无需重启服务
@@ -605,7 +606,17 @@ Claude 原生 API 会在 system prompt 和消息内容末尾注入 `x-anthropic-
 
 cc2llm 在转发请求前自动从 `system` 和 `messages[].content` 中剥离该标头，确保相同上下文在上游服务端产生一致的哈希，最大化缓存命中率。
 
-## 架构
+## 内置工具翻译 (Tool Translator)
+
+Claude Code / Codex / Gemini 三种 Copilot 客户端各自携带了不同格式的内置工具（`web_search`、`web_fetch` / `url_context`），直接转发到非原生的 Provider 上游时会出现格式不兼容。cc2llm 通过 `lib/tool-translator/` 模块在请求转发前完成一次**客户端 → 目标 Provider**的格式互译：
+
+- **识别阶段**：根据 `copilotId`（`claude_code` / `openai_responses` / `openai_chat` / `gemini_wrapped`）和 `matchStrategies` 在请求 tools 中匹配出内置工具
+- **翻译阶段**：按 `providerRender[providerName]` 渲染为该 Provider 接受的格式；找不到 provider 级规则时回落到 `defaultRender`
+- **回落响应**：识别为内置工具的 tool_call 不再转发上游，cc2llm 直接以"该 Provider 不支持该能力"的占位结果回写客户端，保证多轮 tool_use 链路不断裂
+- **call_id 映射**：`call-id-map.js` 维护 Anthropic / OpenAI / Gemini 三种 tool_call_id 命名空间的双向映射，避免协议互转后 ID 错位
+
+翻译表配置在 `config/tool-translator.json`，支持热重载（修改保存即时生效）。可在该文件内扩展新的 copilot 或 Provider 渲染规则。
+
 
 ```
   Claude Code    Codex CLI    Gemini CLI
@@ -695,6 +706,7 @@ cc2llm 在转发请求前自动从 `system` 和 `messages[].content` 中剥离�
 | PUT | `/api/prompts/:name` | 更新 Prompt |
 | GET | `/api/models` | 从所有 Provider API 动态拉取模型列表（经过滤），按 Provider 分组返回 |
 | GET | `/api/usage?from=&to=&unit=` | 用量统计查询 |
+| GET | `/api/key-states` | 各 Provider 全部 API Key 实时状态（可用性、并发数、完成数） |
 
 ## 目录结构
 
@@ -717,17 +729,24 @@ cc2llm/
 │   ├── proxy-agent.js        # HTTP 代理（CONNECT 隧道，支持上级代理）
 │   ├── session-store.js      # Auto Mode 会话状态、Mode 缓存
 │   ├── classifier.js         # 话题分类器（三协议适配）
+│   ├── error-detector.js     # 错误响应分类器：区分 Key 级错误（4XX / Body 内嵌）与 Provider 级错误（5XX）
 │   ├── model-fetcher.js      # 模型列表拉取
 │   ├── prompt-store.js       # Prompt 文件管理
 │   ├── thinking-store.js     # Thinking 块内存存储
 │   ├── usage-tracker.js      # 用量记录与查询
+│   ├── key-state-manager.js  # 多 Key 加权负载均衡状态引擎（动态权重、故障感知、自愈）
+│   ├── tool-translator/      # Copilot 内置工具翻译模块
+│   │   ├── index.js          #   - 入口：translateTools / enableHotReload / collectBuiltinKeys
+│   │   ├── call-id-map.js    #   - 跨协议 tool_call_id 映射（Anthropic ↔ OpenAI ↔ Gemini）
+│   │   ├── recognizer.js     #   - 工具识别：按 copilotId 识别客户端内置工具
+│   │   └── renderer.js       #   - 工具渲染：按 targetProvider 渲染为目标格式
 │   ├── providers/
 │   │   ├── anthropic-compat.js  # Anthropic 协议处理
 │   │   ├── openai-compat.js     # OpenAI 协议处理与 Anthropic ↔ OpenAI 互转
 │   │   ├── gemini.js            # Gemini 协议处理与 Anthropic ↔ Gemini 互转
 │   │   └── auto.js              # 自动路由引擎
 │   ├── handlers/
-│   │   ├── openai-native.js     # OpenAI 原生请求处理器（Codex CLI/App 客户端）
+│   │   ├── openai-native.js     # OpenAI 原生请求处理器（Codex CLI/App，含 Responses API、input sanitize、工具翻译）
 │   │   └── gemini-native.js     # Gemini 原生请求处理器（Gemini CLI 客户端）
 │   └── admin/
 │       ├── index.js          # 管理服务（:8765）
@@ -738,7 +757,8 @@ cc2llm/
 │   └── style.css             # 面板样式
 ├── prompts/
 │   ├── classifier.md         # 话题分类提示词
-│   └── classifier-system.md  # 分类器 System Prompt
+│   ├── classifier-system.md  # 分类器 System Prompt
+│   └── classifier-prefix.md  # 分类前缀提示词（在最新 user 输入前注入）
 ├── data/
 │   └── usage/                # 用量数据（YYYY-MM-DD.json）
 ├── logs/                     # 跨协议调试日志（请求/上游/响应/结果分阶段记录），每次启动自动清空
