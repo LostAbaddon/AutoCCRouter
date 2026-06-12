@@ -494,7 +494,7 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 - 未匹配任何前缀 → 返回 400 错误
 - **通配符前缀**：`prefix` 中可包含 `*`，如 `"gpt-*-mini"`，等价于正则 `/^gpt-.*-mini/`。通配规则排在所有精确规则之后匹配；同组内按 `prefix` 字符串长度降序
 
-`provider` 为 `auto` 时，`target` 可以是数组：每次命中随机选取一个 spec（用于跨 Provider 负载分散）。例如：
+`provider` 为 `auto` 时，`target` 可以是数组：每次命中按权重选取一个 spec（详见下文「多模型加权路由」）。例如：
 
 ```json
 {
@@ -545,7 +545,7 @@ maxTokens 查找优先级（三层）：模型级 `models[].maxTokens` → Provi
 
 mode 值三种写法（可混用）：
 - **字符串**：`"deepseek/deepseek-v4-pro"`，最简形式
-- **字符串数组**：`["spec1", "spec2"]`，每次命中随机选一个（负载分散）
+- **字符串数组**：`["spec1", "spec2"]`，每次命中按权重选择一个（详见下文「多模型加权路由」）
 - **对象**：`{ "description": "...", "models": "spec" | ["spec", ...] }`，可附带 `description` 帮助分类器识别场景，`models` 可为字符串或数组
 
 其它约定：
@@ -563,6 +563,95 @@ mode 值三种写法（可混用）：
 - **Mode 缓存** — `modeCacheTtl` 秒内同一 session 的分类结果被缓存复用
 - **分类器多协议** — quick 模型可以是 Anthropic/OpenAI/Gemini 任一协议的 Provider
 - **对话裁剪** — `conversationGroups` 控制送入分类器的最近对话组数
+
+### 多模型加权路由（Model Router）
+
+当某个 mode 的 `models` 字段、或 modelMapping 中 `provider: "auto"` 的 `target` 数组、或 quick 模式的 `models` 数组存在**多个候选项**时，cc2llm 使用**加权随机算法**来选择本次请求实际使用的 provider/model。
+
+#### 权重计算公式
+
+对候选项 `c`，实际权重为：
+
+```
+weight = link_weight(c.provider) / (max_done + 1) * (c.num_done + 1) * (max_doing + 1) / (c.num_doing + 1)
+```
+
+其中：
+- `link_weight(provider)` — 该 provider 的连接权重（初始 100，每次"不可用"事件 ×0.9，每次"从不可用恢复"事件 ×1.1）
+- `num_done` — 该 provider/model **成功**完成的任务数（失败不计入）
+- `num_doing` — 该 provider/model **当前正在执行**的任务数
+- `max_done` / `max_doing` — 候选项数组中 `num_done` / `num_doing` 的最大值
+- 公式中所有 `+1` 用于避免除零
+
+**直觉**：成功完成任务越多，被选中概率越大；正在执行的任务越多，被选中概率越小。这避免了对热门 provider/model 的过载。
+
+#### Provider 健康度感知
+
+`link_weight` 会随 provider 实际运行情况自动调整（数据从 `key-state-manager` 现有机制获取，**不重复维护**）：
+
+| 事件 | link_weight 变化 |
+|------|------------------|
+| 任务失败，provider 被判定为不可用 | × `LINK_WEIGHT_DOWN_FACTOR`（默认 0.9） |
+| 任务成功，provider 从不可用恢复 | × `LINK_WEIGHT_UP_FACTOR`（默认 1.1） |
+| 任务成功，provider 原本就可用 | 不变 |
+| 任务失败，provider 原本就不可用 | × 0.9（持续压低） |
+
+> "持续压低"是预期行为——provider 持续故障时，权重会逐次降至 0.9 → 0.81 → 0.729 → …，直到几乎不被选中。当 provider 恢复后一次任务成功即开始回升（× 1.1）。
+
+#### 失败重试
+
+每次任务完成（无论成功或失败）都会立即更新所有统计。
+
+**任务失败时**：
+- 重新加权选模型，从相同 `models[]` 数组中重新抽取
+- 允许抽到同一个 provider/model 作为重试（不强制过滤）
+- 最多 `MAX_RETRY_ATTEMPTS` 次（默认 3，含首次）
+- 全部失败才返回最后一次错误给 Copilot；只要中间有任意一次成功，调用方看不到任何错误
+
+**业务请求和 Classifier Quick 请求都遵循此重试规则**——两者各自有独立的重试循环。
+
+#### 数组不去重
+
+候选项数组**不会自动去重**。如果用户在 `models` 中输入两个完全相同的 `provider/model` 字符串，相当于把该候选项的概率人为放大 2 倍。这是规则允许的干预手段，例如：
+
+```json
+"code": ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-pro", "google/gemini-3.1-pro"]
+```
+
+效果：deepseek 整体被选中的概率约 2/3，gemini 约 1/3。
+
+#### 热加载重置
+
+`config.json` 热重载时，所有 `link_weight`、`num_done`、`num_doing` 全量清空，回到初始状态。
+
+#### 可调参数
+
+所有可调参数均定义为 `lib/model-router.js` 文件顶部常量，修改后重启即可生效，无需写死在调用处：
+
+```javascript
+const LINK_WEIGHT_DOWN_FACTOR = 0.9;   // provider 不可用时 link_weight 下调系数
+const LINK_WEIGHT_UP_FACTOR = 1.1;     // provider 恢复时 link_weight 上调系数
+const MAX_RETRY_ATTEMPTS = 3;          // 单个任务最大尝试次数(含首次)
+const INITIAL_LINK_WEIGHT = 100;       // provider 初始 link_weight
+```
+
+#### 与现有 API Key 负载均衡的关系
+
+`model-router` 是**新的、横跨 Provider/Model 级别**的路由层，与已有的 `key-state-manager`（同 Provider 多 Key 负载均衡）是两个完全独立、不冲突的模块：
+
+| 维度 | model-router | key-state-manager |
+|------|--------------|-------------------|
+| 粒度 | Provider / Model | Provider / API Key |
+| 目的 | 多 Provider/Model 路由选择 | 同 Provider 多账号负载均衡 |
+| 状态 | 内存，num_done/num_doing/link_weight | 内存，available/inFlight/completed |
+| 持久化 | 无（热加载重置） | 无（除用量统计外） |
+| 文档 | 本节 | `docs/multi_key_balancer_design.md` |
+
+二者可在同一次请求中先后使用：先由 model-router 选定 provider/model，再由 key-state-manager 在该 provider 内部选择具体 API Key。
+
+#### 状态查看
+
+管理面板可通过 `GET /api/model-router` 端点获取当前 Model Router 状态快照（providerWeights + taskStats），用于调试权重收敛。
 
 ## 管理面板
 

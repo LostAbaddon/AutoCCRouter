@@ -36,6 +36,15 @@ watchConfig((newConfig) => {
 	if (newConfig.conversationGroups !== undefined) cfg.conversationGroups = newConfig.conversationGroups;
 	if (newConfig.modeCacheTtl !== undefined) cfg.modeCacheTtl = newConfig.modeCacheTtl;
 	log('info', '[config] 已热重载 config.json');
+	// 热加载时重置 Model Router 所有权重和计数
+	try {
+		const modelRouter = require('./lib/model-router');
+		modelRouter.resetAll();
+		log('info', '[config] 已重置 Model Router 状态');
+	}
+	catch (e) {
+		log('warn', `[config] 重置 Model Router 失败: ${e.message}`);
+	}
 });
 
 const cmd = process.argv[2];
