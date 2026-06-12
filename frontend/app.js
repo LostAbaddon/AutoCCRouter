@@ -923,6 +923,10 @@ const loadUsage = async () => {
 	const clientAgg = new Map();
 	data.entries.forEach((entry) => {
 		const source = entry.clientSource || 'claudecode';
+		// AUTO 是后台分类器内部调用，不是 Copilot 客户端发起的请求，不在 Copilot Usage 图中展示
+		if (source === 'auto') {
+			return;
+		}
 		const period = entry.period;
 		if (!clientAgg.has(source)) clientAgg.set(source, new Map());
 		const srcMap = clientAgg.get(source);
@@ -1303,8 +1307,9 @@ const loadUsage = async () => {
 			const cur = modeAgg.get(m.mode) || 0;
 			modeAgg.set(m.mode, cur + m.activations);
 		});
-		const modeLabels = [...modeAgg.keys()];
-		const modeData = [...modeAgg.values()];
+		const modeSorted = [...modeAgg.entries()].sort((a, b) => b[1] - a[1]);
+		const modeLabels = modeSorted.map((e) => e[0]);
+		const modeData = modeSorted.map((e) => e[1]);
 		const modeColors = [...chartColors].slice(0, modeLabels.length);
 		usageCharts.modes = new Chart(modesCanvas.getContext('2d'), {
 			type: 'bar',
