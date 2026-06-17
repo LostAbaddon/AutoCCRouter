@@ -24,7 +24,7 @@ description: Auto mode topic classification prompt
 
 **示例**：
 - 如果当前工作模式为空或"default"或"quick"或不在可用工作模式中 → {"is_new_topic": true, "mode": "best_fitting_mode"}
-- 如果最新消息延续了对坏事的相同任务/主题 → {"is_new_topic": false, "mode": ""}
+- 如果最新消息延续了对话历史的相同任务/主题 → {"is_new_topic": false, "mode": ""}
 - 如果最新消息与对话历史话题有明显不同 → {"is_new_topic": true, "mode": "best_fitting_mode"}
 - 如果最新消息开启了一个明显的新主题 → {"is_new_topic": true, "mode": "best_fitting_mode"}
 - 如果是新主题但没有匹配的模式 → {"is_new_topic": true, "mode": ""}
