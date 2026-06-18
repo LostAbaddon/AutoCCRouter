@@ -18,15 +18,15 @@ catch (e) {
 }
 
 const config = loadConfig();
-global.cc2llmConfig = config;
+global.nervhubConfig = config;
 
-const getConfig = () => global.cc2llmConfig;
+const getConfig = () => global.nervhubConfig;
 
 // config.json 外部变更时热生效：mutate 同一引用，而非替换全局对象。
 // 这与 lib/admin/routes.js 中 handlePutConfig 的字段合并方式保持一致，
 // 保证 proxy-server、admin routes、providers 等所有持有原引用的模块立刻看到变更。
 watchConfig((newConfig) => {
-	const cfg = global.cc2llmConfig;
+	const cfg = global.nervhubConfig;
 	if (newConfig.server) cfg.server = { ...cfg.server, ...newConfig.server };
 	if (newConfig.providers) cfg.providers = newConfig.providers;
 	if (newConfig.modelMapping) cfg.modelMapping = newConfig.modelMapping;
@@ -53,7 +53,7 @@ if (cmd === 'claude') {
 	const env = {
 		...process.env,
 		ANTHROPIC_BASE_URL: 'http://127.0.0.1:8764',
-		ANTHROPIC_AUTH_TOKEN: 'cc2llm',
+		ANTHROPIC_AUTH_TOKEN: 'nervhub',
 	};
 
 	const args = [
@@ -80,7 +80,7 @@ else if (cmd === 'codex') {
 	const env = {
 		...process.env,
 		OPENAI_BASE_URL: 'http://127.0.0.1:8764/codex',
-		OPENAI_API_KEY: 'cc2llm',
+		OPENAI_API_KEY: 'nervhub',
 	};
 
 	const child = spawn('codex', [], {
@@ -102,7 +102,7 @@ else if (cmd === 'gemini') {
 	const env = {
 		...process.env,
 		GOOGLE_GEMINI_BASE_URL: 'http://127.0.0.1:8764',
-		GEMINI_API_KEY: 'cc2llm',
+		GEMINI_API_KEY: 'nervhub',
 	};
 
 	const child = spawn('gemini', [], {

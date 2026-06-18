@@ -1,5 +1,5 @@
 {
-	"name": "cc2llm",
+	"name": "nervhub",
 	"version": "2.4.0",
 	"description": "Multi-provider LLM bridge proxy: Claude Code/Cowork → DeepSeek, Gemini, GPT, Kimi, MiniMax, OpenRouter & more",
 	"main": "index.js",
