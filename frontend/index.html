@@ -22,6 +22,16 @@
 		</nav>
 	</header>
 
+	<div id="git-update-banner" class="git-update-banner hidden">
+		<div class="git-update-banner-inner">
+			<span class="git-update-banner-icon">&#9888;</span>
+			<span class="git-update-banner-text">
+				检测到本项目的 <strong id="git-update-branches"></strong> 分支有新代码，请执行 <code>git pull</code> 拉取最新版本。
+			</span>
+			<button id="git-update-banner-close" class="git-update-banner-close">&times;</button>
+		</div>
+	</div>
+
 	<main>
 		<section id="tab-dashboard" class="tab-content active">
 			<div class="card-grid">

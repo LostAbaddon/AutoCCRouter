@@ -17,6 +17,7 @@
 - **Web 管理面板** — 可视化编辑 Provider、Model Mapping、Agent（Working Mode）、Prompt，无需重启服务即时生效
 - **配置热生效** — 直接编辑 `config.json` 保存即可即时生效，与网页端保存行为一致；无需重启服务
 - **Token 与缓存优化** — 自动拦截 Claude 工具发出的防护性/计费请求，清除会破坏上游 Prompt Cache 的干扰标头，显著降低实际 Token 消耗并提升缓存命中率
+- **Git 更新提醒** — 定时检查远程 `master`/`develop` 分支更新，管理面板 Dashboard 显示更新横幅（30 分钟轮询），`GET /api/git-status` 可查询状态
 
 ## 快速开始
 
@@ -555,7 +556,7 @@ mode 值三种写法（可混用）：
 - `quick` — 分类器自身使用的轻量模型（用于快速判断话题）。支持 Anthropic / OpenAI / Gemini 三种协议的 Provider
 - 其余 key — 自定义工作模式（如 `plan` / `code` / `writing` / `research`），分类器根据对话内容自动匹配
 
-分类提示词可在管理面板的 **Prompts** 标签页实时编辑，或直接修改 `prompts/classifier.md`（分类 prompt）和 `prompts/classifier-system.md`（system prompt）。
+分类提示词可在管理面板的 **Prompts** 标签页实时编辑，或直接修改 `prompts/classifier-forAssistant.md`（分类 prompt — assistant 角色）和 `prompts/classifier-forUser.md`（分类 prompt — user 角色）。
 
 ### Auto Mode 高级特性
 
@@ -659,7 +660,7 @@ const INITIAL_LINK_WEIGHT = 100;       // provider 初始 link_weight
 
 | 标签页 | 功能 |
 |--------|------|
-| Dashboard | 服务状态、运行时长、内存占用、在线 Provider、Mappings 概览 |
+| Dashboard | 服务状态、运行时长、内存占用、在线 Provider、Mappings 概览、Git 更新提醒 |
 | Providers | 增删改查模型厂商，配置 API Key/Base URL/代理 |
 | Model Mappings | 管理模型名 → Provider/Model 的映射规则 |
 | Agents | 管理 Config Set 和 Working Mode 对应关系 |
@@ -796,6 +797,7 @@ Claude Code / Codex / Gemini 三种 Copilot 客户端各自携带了不同格式
 | GET | `/api/models` | 从所有 Provider API 动态拉取模型列表（经过滤），按 Provider 分组返回 |
 | GET | `/api/usage?from=&to=&unit=` | 用量统计查询 |
 | GET | `/api/key-states` | 各 Provider 全部 API Key 实时状态（可用性、并发数、完成数） |
+| GET | `/api/git-status` | Git 远程更新检查状态（hasUpdate、branchesWithUpdate、lastCheckTime） |
 
 ## 目录结构
 
@@ -824,6 +826,8 @@ cc2llm/
 │   ├── thinking-store.js     # Thinking 块内存存储
 │   ├── usage-tracker.js      # 用量记录与查询
 │   ├── key-state-manager.js  # 多 Key 加权负载均衡状态引擎（动态权重、故障感知、自愈）
+│   ├── model-router.js       # 多模型加权路由引擎（provider 级别负载均衡与故障转移）
+│   ├── update-checker.js      # Git 远程更新定时检查（master/develop 分支）
 │   ├── tool-translator/      # Copilot 内置工具翻译模块
 │   │   ├── index.js          #   - 入口：translateTools / enableHotReload / collectBuiltinKeys
 │   │   ├── call-id-map.js    #   - 跨协议 tool_call_id 映射（Anthropic ↔ OpenAI ↔ Gemini）
@@ -845,17 +849,14 @@ cc2llm/
 │   ├── app.js                # 面板逻辑（Chart.js 可视化）
 │   └── style.css             # 面板样式
 ├── prompts/
-│   ├── classifier.md         # 话题分类提示词
-│   ├── classifier-system.md  # 分类器 System Prompt
-│   └── classifier-prefix.md  # 分类前缀提示词（在最新 user 输入前注入）
+│   ├── classifier-forAssistant.md  # 话题分类提示词 — assistant 角色
+│   ├── classifier-forUser.md       # 话题分类提示词 — user 角色
+│   ├── classifier-system.md         # 分类器 System Prompt
+│   ├── classifier-prefix.md         # 分类前缀提示词（在最新 user 输入前注入）
 ├── data/
 │   └── usage/                # 用量数据（YYYY-MM-DD.json）
 ├── logs/                     # 跨协议调试日志（请求/上游/响应/结果分阶段记录），每次启动自动清空
 └── test/
-    ├── test.js                  # 单元测试
-    ├── test-end-to-end.js       # 端到端测试
-    ├── test-tool-translator.js  # tool-translator 单元测试
-    └── verify-tools-schema.js   # tools schema 校验脚本
 ```
 
 ## 模型列表与过滤

@@ -138,9 +138,12 @@ else if (cmd === 'wui') {
 else {
 	const { createProxyServer } = require('./lib/proxy-server');
 	const { createAdminServer } = require('./lib/admin');
+	const updateChecker = require('./lib/update-checker');
 
 	const proxyServer = createProxyServer(getConfig);
 	const adminServer = createAdminServer(getConfig);
+
+	updateChecker.start();
 
 	const proxyPort = config.server.port || 8765;
 	const proxyHost = config.server.host || '127.0.0.1';

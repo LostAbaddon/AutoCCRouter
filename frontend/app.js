@@ -141,6 +141,45 @@ const loadDashboard = async (full = true) => {
 	}
 };
 
+const renderGitUpdateBanner = (data) => {
+	const banner = document.getElementById('git-update-banner');
+	const branchesEl = document.getElementById('git-update-branches');
+
+	if (!banner || !branchesEl) {
+		return;
+	}
+
+	const hide = () => {
+		banner.classList.add('hidden');
+		document.body.classList.remove('has-git-banner');
+	};
+
+	if (!data.hasUpdate || data.branchesWithUpdate.length === 0) {
+		hide();
+		return;
+	}
+
+	const dismissed = sessionStorage.getItem('gitUpdateBannerDismissed');
+	if (dismissed === data.branchesWithUpdate.join(',')) {
+		hide();
+		return;
+	}
+
+	branchesEl.textContent = data.branchesWithUpdate.join('、');
+	banner.classList.remove('hidden');
+	document.body.classList.add('has-git-banner');
+};
+
+const fetchGitStatus = async () => {
+	try {
+		const data = await api.get('/api/git-status');
+		renderGitUpdateBanner(data);
+	}
+	catch (e) {
+		// 静默失败，不破坏页面
+	}
+};
+
 const formatUptime = (seconds) => {
 	if (seconds < 60) {
 		return `${seconds}s`;
@@ -1519,6 +1558,24 @@ const init = () => {
 
 	// 预加载 modelList 到 sessionStorage
 	getModelList();
+
+	// Git 更新提醒横幅：绑定关闭按钮 + 启动轮询
+	const closeBtn = document.getElementById('git-update-banner-close');
+	if (closeBtn) {
+		closeBtn.addEventListener('click', () => {
+			const banner = document.getElementById('git-update-banner');
+			const branchesEl = document.getElementById('git-update-branches');
+			if (banner) {
+				banner.classList.add('hidden');
+				document.body.classList.remove('has-git-banner');
+			}
+			if (branchesEl) {
+				sessionStorage.setItem('gitUpdateBannerDismissed', branchesEl.textContent);
+			}
+		});
+	}
+	fetchGitStatus();
+	setInterval(fetchGitStatus, 300000);
 
 	loadDashboard();
 	setInterval(() => {
