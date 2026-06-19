@@ -1261,7 +1261,7 @@ const loadUsage = async () => {
 				tooltip: {
 					callbacks: {
 						label: (ctx) => `${ctx.raw.toLocaleString()} calls`,
-						afterLabel: (ctx) => `${providerLabels[ctx.dataIndex]}`,
+						afterLabel: (ctx) => `${tokensProviderLabels[ctx.dataIndex]}`,
 					},
 				},
 			},
@@ -1279,30 +1279,37 @@ const loadUsage = async () => {
 	});
 
 	// 汇总柱状图: Tokens by Provider/Model
+	const tokensSorted = [...aggMap.values()].sort((a, b) => {
+		const totalA = (a.inputTokens || 0) + (a.outputTokens || 0) + (a.cacheTokens || 0);
+		const totalB = (b.inputTokens || 0) + (b.outputTokens || 0) + (b.cacheTokens || 0);
+		return totalB - totalA;
+	});
+	const tokensLabels = tokensSorted.map((a) => a.model.length > 30 ? a.model.substring(0, 28) + '...' : a.model);
+	const tokensProviderLabels = tokensSorted.map((a) => a.provider);
 	const tokensCanvas = document.getElementById('usage-chart-tokens');
 	const tokensCtx = tokensCanvas.getContext('2d');
 	usageCharts.tokens = new Chart(tokensCtx, {
 		type: 'bar',
 		data: {
-			labels,
+			labels: tokensLabels,
 			datasets: [
 				{
 					label: 'Input',
-					data: aggregated.map((a) => a.inputTokens),
+					data: tokensSorted.map((a) => a.inputTokens),
 					backgroundColor: '#58a6ff',
 					borderColor: '#0f1117',
 					borderWidth: 1,
 				},
 				{
 					label: 'Output',
-					data: aggregated.map((a) => a.outputTokens),
+					data: tokensSorted.map((a) => a.outputTokens),
 					backgroundColor: '#3fb950',
 					borderColor: '#0f1117',
 					borderWidth: 1,
 				},
 				{
 					label: 'Cache',
-					data: aggregated.map((a) => a.cacheTokens),
+					data: tokensSorted.map((a) => a.cacheTokens),
 					backgroundColor: '#d29922',
 					borderColor: '#0f1117',
 					borderWidth: 1,
@@ -1320,7 +1327,7 @@ const loadUsage = async () => {
 				tooltip: {
 					callbacks: {
 						label: (ctx) => `${ctx.dataset.label}: ${formatTokens(ctx.raw)} tokens`,
-						afterLabel: (ctx) => `${providerLabels[ctx.dataIndex]}`,
+						afterLabel: (ctx) => `${tokensProviderLabels[ctx.dataIndex]}`,
 					},
 				},
 			},
