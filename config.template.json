@@ -195,6 +195,11 @@
 			"type": "auto"
 		}
 	},
+	"searchEngine": {
+		"default": "builtin",
+		"anthropic": "gemini",
+		"openai": "gemini,google,zhihu"
+	},
 	"agents": {
 		"defaults": {
 			"default": "deepseek/deepseek-v4-pro",
