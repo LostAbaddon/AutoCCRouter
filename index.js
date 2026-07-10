@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const { spawn, exec } = require('child_process');
 const { loadConfig, watchConfig } = require('./lib/config');
 const { log } = require('./lib/logger');
-const { spawn, exec } = require('child_process');
+require('./lib/core');
 
 // 启动时清空 logs 目录下的所有历史文件，确保本次运行的日志独立。
 // 注意：进程被守护工具自动重启时，上次崩溃的日志会被清空，无法事后追溯。
@@ -17,37 +18,9 @@ catch (e) {
 	console.error(`[startup] 清空 logs 目录失败: ${e.message}`);
 }
 
+const cmd = process.argv[2];
 const config = loadConfig();
 global.nervhubConfig = config;
-
-const getConfig = () => global.nervhubConfig;
-
-// config.json 外部变更时热生效：mutate 同一引用，而非替换全局对象。
-// 这与 lib/admin/routes.js 中 handlePutConfig 的字段合并方式保持一致，
-// 保证 proxy-server、admin routes、providers 等所有持有原引用的模块立刻看到变更。
-watchConfig((newConfig) => {
-	const cfg = global.nervhubConfig;
-	if (newConfig.server) cfg.server = { ...cfg.server, ...newConfig.server };
-	if (newConfig.providers) cfg.providers = newConfig.providers;
-	if (newConfig.modelMapping) cfg.modelMapping = newConfig.modelMapping;
-	if (newConfig.agents) cfg.agents = newConfig.agents;
-	if (newConfig.logLevel) cfg.logLevel = newConfig.logLevel;
-	if (newConfig.defaultMaxTokens !== undefined) cfg.defaultMaxTokens = newConfig.defaultMaxTokens;
-	if (newConfig.conversationGroups !== undefined) cfg.conversationGroups = newConfig.conversationGroups;
-	if (newConfig.modeCacheTtl !== undefined) cfg.modeCacheTtl = newConfig.modeCacheTtl;
-	log('info', '[config] 已热重载 config.json');
-	// 热加载时重置 Model Router 所有权重和计数
-	try {
-		const modelRouter = require('./lib/model-router');
-		modelRouter.resetAll();
-		log('info', '[config] 已重置 Model Router 状态');
-	}
-	catch (e) {
-		log('warn', `[config] 重置 Model Router 失败: ${e.message}`);
-	}
-});
-
-const cmd = process.argv[2];
 
 if (cmd === 'claude') {
 	const env = {
@@ -140,8 +113,22 @@ else {
 	const { createAdminServer } = require('./lib/admin');
 	const updateChecker = require('./lib/update-checker');
 
-	const proxyServer = createProxyServer(getConfig);
-	const adminServer = createAdminServer(getConfig);
+	// config.json 外部变更时热生效：mutate 同一引用，而非替换全局对象。
+	// 这与 lib/admin/routes.js 中 handlePutConfig 的字段合并方式保持一致，
+	// 保证 proxy-server、admin routes、providers 等所有持有原引用的模块立刻看到变更。
+	watchConfig(() => {
+		try {
+			const modelRouter = require('./lib/model-router');
+			modelRouter.resetAll();
+			log('info', '[config] 已重置 Model Router 状态');
+		}
+		catch (e) {
+			log('warn', `[config] 重置 Model Router 失败: ${e.message}`);
+		}
+	});
+
+	const proxyServer = createProxyServer();
+	const adminServer = createAdminServer();
 
 	updateChecker.start();
 
@@ -191,9 +178,9 @@ else {
 	process.on('uncaughtException', (err) => {
 		log('error', `Uncaught exception: ${err.message}`, err.stack || '');
 	});
-	process.on('unhandledRejection', (reason) => {
-		log('error', `Unhandled rejection: ${reason}`);
+	process.on('unhandledRejection', (err) => {
+		log('error', `Unhandled rejection: ${err.message}`, err.stack || '');
 	});
 
-	module.exports = { getConfig, proxyServer, adminServer };
+	module.exports = { proxyServer, adminServer };
 }
