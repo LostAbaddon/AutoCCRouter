@@ -11,7 +11,7 @@ Transparently bridge Claude Code, Claude Cowork, Codex CLI, Codex App, and Gemin
 Open-source · self-hosted · Apache 2.0
 
 [![Version](https://img.shields.io/badge/version-2.4.0-blue)](package.json)
-[![Node](https://img.shields.io/badge/node-%E2%89%A518-3c873a.svg)](package.json)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518%20(recommended)-3c873a.svg)](package.json)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
@@ -68,19 +68,21 @@ npm start wui      # Open the dashboard in your browser
 | Proxy (for clients) | `http://127.0.0.1:8764` |
 | Web Dashboard | `http://127.0.0.1:8765` |
 
+Defaults are read from `config.json` → `server.port` (8764) and `server.adminPort` (8765). When the file is missing or the keys are unset, the proxy falls back to `:8765` and the admin to `:8766`.
+
 ## What You Get
 
 |  | Feature | Detail |
 |:---:|---|---|
 | 🔌 | **Five clients, one port** | Claude Code, Claude Cowork, Codex CLI, Codex App, and Gemini CLI all connect to `:8764`. Protocol auto-detection by URL path — no per-client configuration. |
-| 🌐 | **Three protocols, any vendor** | Anthropic Messages, OpenAI Chat/Responses, and Google Gemini. Forward to DeepSeek, Google, Moonshot, MiniMax, OpenRouter, or any compatible API. |
+| 🌐 | **Three protocols, any vendor** | Anthropic Messages, OpenAI Chat/Responses, and Google Gemini. Forward to DeepSeek, Google, Moonshot/Kimi, MiniMax, OpenRouter, OpenAI, or any compatible API. |
+| 🧠 | **Auto mode with topic classification** | A lightweight classifier reads the conversation and picks the best working mode from a configurable set (e.g. coding / writing / planning). No manual model switching. Classification prompts are editable live in the dashboard. |
 | 🔄 | **Cross-protocol translation** | Claude thinks it's talking to Anthropic; the upstream sees OpenAI. Streaming, tool calls, and thinking blocks survive the round-trip intact — in both directions. |
-| 🧠 | **Auto mode with topic classification** | A lightweight classifier reads the conversation and picks the best working mode (coding / research / writing / planning). No manual model switching. Classification prompts are editable live in the dashboard. |
 | ⚖️ | **Multi-key load balancing** | `apiKey` accepts an array. Weighted random distribution with automatic failure detection (4XX auth errors, 5XX server errors) and self-healing when keys recover. |
-| 🛠️ | **Built-in tool translator** | Recognizes `web_search` and `web_fetch` in Claude, Codex, and Gemini native formats. Renders them in the target provider's format. Falls back to placeholder responses so multi-turn tool chains never break. |
+| 🛠️ | **Built-in tool translator** | Recognizes built-in tools (`web_search`, `web_fetch`, `url_context`, `googleSearch`, `urlContext`) in Claude, Codex, and Gemini native formats. Renders them in the target provider's format, deduplicating any name collisions. Falls back to placeholder responses so multi-turn tool chains never break. |
 | 📊 | **Usage dashboard** | Track calls and token consumption by provider and model, aggregated by day, week, month, or year. Chart.js visualizations, all in the browser. |
 | ⚡ | **Hot-reload everything** | Edit `config.json` with any editor — changes take effect on the next request. Or use the web dashboard; same effect, no restart. You can add a new provider mid-session without disrupting work in any connected client. |
-| 🎯 | **Token and cache optimization** | Strips billing headers that break upstream prompt caching. Intercepts Claude daemon heartbeat requests before they consume tokens. |
+| 🎯 | **Token and cache optimization** | Strips `x-anthropic-billing-header` blocks that break upstream prompt caching. Intercepts Claude Code's token-count probe (maybe) requests (those carrying an extremely small `max_tokens`) before they consume tokens. |
 | 🔔 | **Git update notifier** | Polls remote `master`/`develop` every 30 minutes. Dashboard shows an update banner when new commits are available. |
 
 ## Client Setup
@@ -93,7 +95,7 @@ NervHub accepts three native API protocols on a single proxy port (`:8764` by de
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8764
 export ANTHROPIC_AUTH_TOKEN=nervhub
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-claude --dangerously-skip-permissions
+claude --dangerously-skip-permissions --allow-dangerously-skip-permissions --settings '{"includeGitInstructions":false}'
 ```
 
 One-command launch:
@@ -101,6 +103,8 @@ One-command launch:
 ```bash
 npm start claude
 ```
+
+> `npm start claude` runs the same command with these flags baked in (see [index.js](index.js)).
 
 ### Claude Cowork
 
@@ -114,7 +118,7 @@ export OPENAI_API_KEY=nervhub
 codex
 ```
 
-> The trailing `/codex` in `OPENAI_BASE_URL` is required by Codex CLI. NervHub strips it during routing.
+> The trailing `/codex` is required by Codex CLI. NervHub identifies the OpenAI protocol by the `/chat/completions` and `/responses` paths under any base URL prefix; `/codex/...` is forwarded as-is to the matching native adapter.
 
 One-command launch:
 
@@ -138,7 +142,7 @@ wire_api = "chat"
 env_key  = "OPENAI_API_KEY"
 ```
 
-Set `OPENAI_API_KEY=nervhub` and launch the app. Codex App also requires a model catalog file — see the comments in `config.template.json` for the full setup.
+Set `OPENAI_API_KEY=nervhub` and launch the app.
 
 ### Gemini CLI
 
@@ -194,16 +198,26 @@ The proxy pipeline, from request to response:
              └──────┬───────┘     └──────────────┘
                     │
                     ▼
+             ┌──────────────────────────────┐
+             │        auto router           │  ◄── only when
+             │   (lib/providers/auto)       │      provider = "auto"
+             └─────────────┬────────────────┘
+                           │ resolved model
+                           ▼
              ┌──────────────────────────────────┐
-             │        Provider Handlers         │
+             │     Upstream Adapters            │
+             │      (lib/providers/)            │
              │  anthropic / openai / gemini     │
-             │  openai-native / gemini-native   │
-             │            auto                  │
              └──────┬───────────────────────────┘
                     │
                     ▼
                 Upstream APIs
         (DeepSeek / Google / Moonshot / ...)
+
+  In parallel, the client-side native adapters in `lib/handlers/`
+  (`openai-native`, `gemini-native`) translate Codex and Gemini
+  client protocols into the upstream adapters' request bodies
+  and convert the responses back.
 ```
 
 Every request follows this path: protocol detection → model name resolution → optional topic classification → key selection with load balancing → protocol translation → upstream dispatch → response translation → streaming back to the client.
@@ -214,7 +228,12 @@ Everything lives in `config.json`. Edit it directly or use the web dashboard at 
 
 ### Providers
 
-Each provider represents a model vendor. Three protocol types are supported:
+Each provider represents a model vendor. The `type` field selects the upstream protocol adapter:
+
+- `anthropic` — Anthropic Messages
+- `openai` — OpenAI Chat / Responses
+- `gemini` — Google Gemini
+- `auto` — router mode; the entry holds no connection info, the model is resolved by the agent classifier for each request
 
 ```json
 "deepseek": {
@@ -227,7 +246,7 @@ Each provider represents a model vendor. Three protocol types are supported:
 }
 ```
 
-`apiKey` accepts either a string or an array for multi-key load balancing. `type` can be `anthropic`, `openai`, `gemini`, or `auto`.
+`apiKey` accepts either a string or an array for multi-key load balancing.
 
 ### Model Mapping
 
@@ -242,28 +261,33 @@ Routes client model names to target providers by prefix matching:
 ]
 ```
 
-Matching is by prefix length descending — `claude-opus-4-7` matches `claude-opus` before any shorter prefix. Wildcards (`*`) are supported, e.g. `gpt-*-mini`.
+Rules are sorted: literal prefixes win over wildcard prefixes; within each group, longer prefixes win. So `claude-opus-4-7` matches the literal rule `claude-opus` before any shorter literal, and a wildcard like `gpt-*-mini` only fires for shapes no literal rule covers. Wildcards compile `*` to `.*` (so `gpt-*-mini` matches `^gpt-.*-mini`).
 
 ### Auto Mode (Agents)
 
-When `provider` is `auto`, NervHub classifies each conversation and picks the best working mode:
+When a `modelMapping` rule has `provider: "auto"`, NervHub classifies the conversation and picks the best working mode:
 
 ```
 User input → Classifier → Working Mode → Routed to model
 ```
+
+Each working mode is a key in `config.agents.<set>`. A mode can be a single model spec (`"provider/model"`), a weighted array, or an object with a `description` used by the classifier:
 
 ```json
 "agents": {
   "defaults": {
     "default":  "deepseek/deepseek-v4-pro",
     "quick":    "google/gemini-3.5-flash",
-    "code":     { "description": "When writing, editing, or designing code", "models": "minimax/minimax-m3" },
-    "research": { "description": "Deep thinking, brainstorming, academic discussion", "models": ["google/gemini-3.1-pro", "deepseek/deepseek-v4-pro"] }
+    "coding":   { "description": "Writing, editing, or designing code", "models": "minimax/minimax-m3" },
+    "writing":  { "description": "Drafts, reports, literary work",        "models": "deepseek/deepseek-v4-pro" },
+    "planning": { "description": "Specifying or updating a plan",        "models": ["google/gemini-3.1-pro", "deepseek/deepseek-v4-pro"] }
   }
 }
 ```
 
-Each mode can specify a single model, a weighted array, or an object with a `description` for the classifier. Classification prompts are live-editable in the dashboard's **Prompts** tab.
+`default` and `quick` are reserved — the router falls back to `default` when classification fails and uses `quick` for short probe requests. Any other key becomes a working mode the classifier can pick.
+
+**Multiple agent sets.** `agents` is a map of named sets (e.g. `defaults`, `without-gemini`). The dashboard exposes a set selector so you can keep one configuration per environment and switch without editing `config.json`. Classification prompts are live-editable in the **Prompts** tab.
 
 ## API Reference
 
@@ -286,7 +310,8 @@ Each mode can specify a single model, a weighted array, or an object with a `des
 | `GET` `/PUT` | `/api/config` | Read/update full config |
 | `GET` `/POST` `/DELETE` | `/api/providers` | CRUD providers |
 | `GET` `/POST` `/PUT` `/DELETE` | `/api/mappings` | CRUD model mappings |
-| `GET` `/PUT` | `/api/prompts` | Read/update classifier prompts |
+| `GET` | `/api/prompts` | List classifier prompts |
+| `PUT` | `/api/prompts/{name}` | Update one classifier prompt |
 | `GET` | `/api/models` | Live model list from provider APIs |
 | `GET` | `/api/usage?from=&to=&unit=` | Usage statistics |
 | `GET` | `/api/key-states` | Per-key availability and load |
@@ -313,18 +338,26 @@ NervHub/
 ├── index.js                   # Entry point — dual-port server + sub-commands
 ├── config.json                # Runtime configuration (hot-reloaded)
 ├── config.template.json       # Configuration template
-├── lib/
+├── lib/                       # Service code
 │   ├── config.js              # Config I/O, hot-reload, maxTokens resolution
-│   ├── model-mapper.js        # Prefix-based model name routing
 │   ├── proxy-server.js        # Proxy service (:8764) — protocol detection and dispatch
-│   ├── classifier.js          # Topic classifier for auto mode
-│   ├── model-router.js        # Weighted multi-model routing with failure retry
-│   ├── key-state-manager.js   # Multi-key load balancing with self-healing
-│   ├── usage-tracker.js       # Token and call statistics
-│   ├── update-checker.js      # Git remote update polling
+│   ├── providers/             # Upstream protocol adapters (anthropic / openai / gemini / auto router)
+│   ├── handlers/              # Client-side native adapters (openai-native / gemini-native)
 │   ├── tool-translator/       # Built-in tool format translation
-│   ├── providers/             # Protocol handlers (anthropic / openai / gemini / auto)
-│   ├── handlers/              # Native protocol adapters (openai-native / gemini-native)
+│   ├── key-state-manager.js   # Multi-key load balancing with self-healing
+│   ├── model-mapper.js        # Prefix-based model name routing (literal + wildcard)
+│   ├── model-router.js        # Weighted multi-model routing with failure retry
+│   ├── model-fetcher.js       # Live model list from provider APIs
+│   ├── classifier.js          # Topic classifier prompt builder
+│   ├── prompt-store.js        # Classifier prompts — fs.watch hot reload
+│   ├── usage-tracker.js       # Token and call statistics
+│   ├── session-store.js       # Per-session state
+│   ├── thinking-store.js      # Tool-use / thinking-block cache
+│   ├── proxy-agent.js         # Upstream HTTPS request helper
+│   ├── error-detector.js      # Upstream error classification
+│   ├── update-checker.js      # Git remote update polling
+│   ├── logger.js              # Logging + per-interaction stage log
+│   ├── core.js                # Shared utilities
 │   └── admin/                 # Admin service (:8765) and REST API routes
 ├── frontend/                  # Web dashboard (HTML + vanilla JS + Chart.js)
 ├── prompts/                   # Classifier prompt templates
